@@ -25,10 +25,9 @@ interface PaginationMeta {
 interface ProductDetailWrapperProps {
   apiBaseUrl: string;
   onAddToCart: (product_id: string, qty: number) => void;
-  onBuyNow: (product_id: string, qty: number, price: number) => void;
 }
 
-const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart, onBuyNow }: ProductDetailWrapperProps) => {
+const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperProps) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(null);
@@ -91,7 +90,6 @@ const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart, onBuyNow }: ProductDeta
       product={product}
       onBack={() => navigate("/")}
       onAddToCart={(qty) => onAddToCart(product._id, qty)}
-      onBuyNow={(qty) => onBuyNow(product._id, qty, product.Price)}
       initialQty={initialQty}
     />
   );
@@ -356,13 +354,6 @@ function App() {
                         navigate("/auth");
                       } else {
                         dispatch(addItemToCart({ product_id, quantity: qty }));
-                      }
-                    }}
-                    onBuyNow={(product_id, qty, price) => {
-                      if (!isAuthenticated) {
-                        navigate("/auth");
-                      } else {
-                        navigate("/checkout", { state: { buyNow: true, product_id, quantity: qty, price } });
                       }
                     }}
                   />

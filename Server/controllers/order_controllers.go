@@ -105,35 +105,38 @@ func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 			return
 		}
 
-		// Reduce/remove ordered items from user's cart on successful order placement
+		// Only remove ordered items from user's cart; keep other items intact
 		cartCollection := database.OpenCollection("Carts", client)
 		var userCart models.Cart
-		err = cartCollection.FindOne(ctx, bson.M{"user_id": userID}).Decode(&userCart)
-		if err == nil {
-			orderedQuantities := make(map[string]int)
+		if err = cartCollection.FindOne(ctx, bson.M{"user_id": userID}).Decode(&userCart); err == nil {
+			// Build a map of ordered product IDs → ordered quantities
+			orderedQtyMap := make(map[string]int)
 			for _, item := range order.Items {
-				orderedQuantities[item.ProductID.Hex()] = item.Quantity
+				orderedQtyMap[item.ProductID.Hex()] = item.Quantity
 			}
 
+			// Walk existing cart items, reducing or dropping ordered products
 			var updatedItems []models.OrderItem
 			var newSubtotal float64 = 0.0
-
-			for _, cartItem := range userCart.Items {
-				prodIDStr := cartItem.ProductID.Hex()
-				if orderedQty, exists := orderedQuantities[prodIDStr]; exists {
-					newQty := cartItem.Quantity - orderedQty
-					if newQty > 0 {
-						cartItem.Quantity = newQty
-						cartItem.Subtotal = float64(newQty) * cartItem.UnitPrice
-						updatedItems = append(updatedItems, cartItem)
-						newSubtotal += cartItem.Subtotal
+			for _, ci := range userCart.Items {
+				idStr := ci.ProductID.Hex()
+				if oQty, hit := orderedQtyMap[idStr]; hit {
+					remaining := ci.Quantity - oQty
+					if remaining > 0 {
+						ci.Quantity = remaining
+						ci.Subtotal = float64(remaining) * ci.UnitPrice
+						updatedItems = append(updatedItems, ci)
+						newSubtotal += ci.Subtotal
 					}
+					// if remaining <= 0: item is fully consumed, skip it
 				} else {
-					updatedItems = append(updatedItems, cartItem)
-					newSubtotal += cartItem.Subtotal
+					updatedItems = append(updatedItems, ci)
+					newSubtotal += ci.Subtotal
 				}
 			}
-
+			if updatedItems == nil {
+				updatedItems = []models.OrderItem{}
+			}
 			_, _ = cartCollection.UpdateOne(
 				ctx,
 				bson.M{"user_id": userID},
