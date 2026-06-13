@@ -10,6 +10,7 @@ interface HeaderProps {
   onRegisterClick?: () => void;
   onLogoClick?: () => void;
   onCartClick?: () => void;
+  onReorderClick?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -17,7 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSignInClick,
   onRegisterClick,
   onLogoClick,
-  onCartClick
+  onCartClick,
+  onReorderClick
 }) => {
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
@@ -164,7 +166,10 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Reorder Button */}
-        <div className="border border-transparent hover:border-white rounded p-2 cursor-pointer transition flex flex-col text-[13px]">
+        <div 
+          onClick={onReorderClick}
+          className="border border-transparent hover:border-white rounded p-2 cursor-pointer transition flex flex-col text-[13px]"
+        >
           <span className="text-[#cccccc] text-[11px] font-normal leading-tight">Past Purchases</span>
           <span className="leading-tight">Reorder</span>
         </div>

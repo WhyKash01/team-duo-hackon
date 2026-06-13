@@ -38,7 +38,6 @@ type Order struct {
 	ID               bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
 	OrderID          string        `json:"order_id" bson:"order_id"`
 	UserID           bson.ObjectID `json:"user_id" bson:"user_id" validate:"required"`
-	StoreID          bson.ObjectID `json:"store_id" bson:"store_id" validate:"required"`
 	Status           string        `json:"status" bson:"status" validate:"required,oneof=PENDING PACKING DISPATCHED DELIVERED CANCELLED"`
 	Items            []OrderItem   `json:"items" bson:"items" validate:"required,dive"` // Embedded array of items
 	ItemTotal        float64       `json:"item_total" bson:"item_total" validate:"required,min=0"`

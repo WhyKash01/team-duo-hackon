@@ -1,0 +1,190 @@
+package controllers
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"net/http"
+	"time"
+
+	"server/database"
+	"server/models"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+func generateOrderID() string {
+	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	randomNum := r.Intn(900) + 100 // 3-digit random number
+	return fmt.Sprintf("ORD-%d-%d", timestamp, randomNum)
+}
+
+func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var order models.Order
+		if err := c.ShouldBindJSON(&order); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userID, err := getUserObjectID(c)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		order.UserID = userID
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		productCollection := database.OpenCollection("Products", client)
+		orderCollection := database.OpenCollection("Orders", client)
+
+		var validatedItems []models.OrderItem
+		var itemTotal float64 = 0
+
+		for _, item := range order.Items {
+			if item.ProductID == bson.NilObjectID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Product ID is required for all items"})
+				return
+			}
+			if item.Quantity <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Quantity must be greater than zero"})
+				return
+			}
+
+			var product models.Product
+			err = productCollection.FindOne(ctx, bson.M{"_id": item.ProductID}).Decode(&product)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Product not found: %s", item.ProductID.Hex())})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch product details"})
+				return
+			}
+
+			subtotal := float64(item.Quantity) * product.Price
+			validatedItem := models.OrderItem{
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+				UnitPrice: product.Price,
+				Subtotal:  subtotal,
+			}
+			validatedItems = append(validatedItems, validatedItem)
+			itemTotal += subtotal
+		}
+
+		// Calculate delivery fee
+		var deliveryFee float64 = 39.0
+		if itemTotal >= 499.0 {
+			deliveryFee = 0.0
+		}
+
+		grandTotal := itemTotal + deliveryFee
+
+		// Initialize/override system fields
+		order.ID = bson.NewObjectID()
+		order.OrderID = generateOrderID()
+		order.Status = "Success"
+		order.Items = validatedItems
+		order.ItemTotal = itemTotal
+		order.DeliveryFee = deliveryFee
+		order.GrandTotal = grandTotal
+		order.CreatedAt = time.Now()
+		order.UpdatedAt = time.Now()
+
+		_, insertErr := orderCollection.InsertOne(ctx, order)
+		if insertErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to place order"})
+			return
+		}
+
+		// Reduce/remove ordered items from user's cart on successful order placement
+		cartCollection := database.OpenCollection("Carts", client)
+		var userCart models.Cart
+		err = cartCollection.FindOne(ctx, bson.M{"user_id": userID}).Decode(&userCart)
+		if err == nil {
+			orderedQuantities := make(map[string]int)
+			for _, item := range order.Items {
+				orderedQuantities[item.ProductID.Hex()] = item.Quantity
+			}
+
+			var updatedItems []models.OrderItem
+			var newSubtotal float64 = 0.0
+
+			for _, cartItem := range userCart.Items {
+				prodIDStr := cartItem.ProductID.Hex()
+				if orderedQty, exists := orderedQuantities[prodIDStr]; exists {
+					newQty := cartItem.Quantity - orderedQty
+					if newQty > 0 {
+						cartItem.Quantity = newQty
+						cartItem.Subtotal = float64(newQty) * cartItem.UnitPrice
+						updatedItems = append(updatedItems, cartItem)
+						newSubtotal += cartItem.Subtotal
+					}
+				} else {
+					updatedItems = append(updatedItems, cartItem)
+					newSubtotal += cartItem.Subtotal
+				}
+			}
+
+			_, _ = cartCollection.UpdateOne(
+				ctx,
+				bson.M{"user_id": userID},
+				bson.M{"$set": bson.M{"items": updatedItems, "subtotal": newSubtotal}},
+			)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Order placed successfully",
+			"data":    order,
+		})
+	}
+}
+
+func GetUserOrders(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, err := getUserObjectID(c)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		orderCollection := database.OpenCollection("Orders", client)
+
+		// Find orders for the user sorted by creation date descending
+		opts := options.Find().SetSort(bson.M{"created_at": -1})
+		cursor, err := orderCollection.Find(ctx, bson.M{"user_id": userID}, opts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch orders"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var orders []models.Order
+		if err = cursor.All(ctx, &orders); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error parsing orders"})
+			return
+		}
+
+		// Ensure we return empty array instead of null in JSON if no orders exist
+		if orders == nil {
+			orders = []models.Order{}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    orders,
+		})
+	}
+}

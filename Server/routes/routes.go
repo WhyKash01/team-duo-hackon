@@ -39,6 +39,10 @@ func SetupRouter() *gin.Engine {
 		protected.POST("/cart/update", controllers.UpdateCartItem(client))
 		protected.DELETE("/cart/remove/:product_id", controllers.RemoveCartItem(client))
 		protected.DELETE("/cart/clear", controllers.ClearCart(client))
+
+		// Order management endpoints
+		protected.POST("/order/place", controllers.PlaceOrder(client))
+		protected.GET("/orders", controllers.GetUserOrders(client))
 	}
 
 	return r

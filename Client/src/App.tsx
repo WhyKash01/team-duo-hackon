@@ -9,6 +9,9 @@ import { Footer } from "./components/Footer";
 import { AuthPage } from "./components/AuthPage";
 import { ProductPage, type Product } from "./components/ProductPage";
 import { CartPage } from "./components/CartPage";
+import { CheckoutPage } from "./components/CheckoutPage";
+import { OrderConfirmation } from "./components/OrderConfirmation";
+import { OrdersPage } from "./components/OrdersPage";
 import { Star, Loader2 } from "lucide-react";
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from "react-router-dom";
 
@@ -22,14 +25,19 @@ interface PaginationMeta {
 interface ProductDetailWrapperProps {
   apiBaseUrl: string;
   onAddToCart: (product_id: string, qty: number) => void;
+  onBuyNow: (product_id: string, qty: number, price: number) => void;
 }
 
-const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperProps) => {
+const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart, onBuyNow }: ProductDetailWrapperProps) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const cartItems = useSelector((state: RootState) => state.cart.cart?.items || []);
+  const cartItem = cartItems.find((item) => item.product_id === id);
+  const initialQty = cartItem ? cartItem.quantity : 1;
 
   useEffect(() => {
     if (!id) return;
@@ -83,6 +91,8 @@ const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperP
       product={product}
       onBack={() => navigate("/")}
       onAddToCart={(qty) => onAddToCart(product._id, qty)}
+      onBuyNow={(qty) => onBuyNow(product._id, qty, product.Price)}
+      initialQty={initialQty}
     />
   );
 };
@@ -159,6 +169,7 @@ function App() {
               onRegisterClick={() => navigate("/auth")}
               onLogoClick={() => navigate("/")}
               onCartClick={() => navigate("/cart")}
+              onReorderClick={() => navigate("/orders")}
             />
 
             {/* Sub-Header links bar */}
@@ -347,6 +358,13 @@ function App() {
                         dispatch(addItemToCart({ product_id, quantity: qty }));
                       }
                     }}
+                    onBuyNow={(product_id, qty, price) => {
+                      if (!isAuthenticated) {
+                        navigate("/auth");
+                      } else {
+                        navigate("/checkout", { state: { buyNow: true, product_id, quantity: qty, price } });
+                      }
+                    }}
                   />
                 }
               />
@@ -355,6 +373,24 @@ function App() {
               <Route
                 path="/cart"
                 element={<CartPage />}
+              />
+
+              {/* Checkout Route */}
+              <Route
+                path="/checkout"
+                element={<CheckoutPage />}
+              />
+
+              {/* Order Confirmation Route */}
+              <Route
+                path="/order-confirmation"
+                element={<OrderConfirmation />}
+              />
+
+              {/* Order History Route */}
+              <Route
+                path="/orders"
+                element={<OrdersPage />}
               />
 
               {/* Catch-all Redirect to Home */}

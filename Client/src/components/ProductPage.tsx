@@ -1,4 +1,4 @@
-import { useState, type FC } from "react";
+import { useState, useEffect, type FC } from "react";
 import { Star, ShieldCheck, Truck, RotateCcw, Award, ChevronLeft } from "lucide-react";
 import { z } from "zod";
 
@@ -24,14 +24,22 @@ interface ProductPageProps {
   product: Product;
   onBack: () => void;
   onAddToCart: (qty: number) => void;
+  onBuyNow: (qty: number) => void;
+  initialQty?: number;
 }
 
 export const ProductPage: FC<ProductPageProps> = ({ 
   product, 
   onBack, 
-  onAddToCart 
+  onAddToCart,
+  onBuyNow,
+  initialQty = 1
 }) => {
-  const [selectedQty, setSelectedQty] = useState(1);
+  const [selectedQty, setSelectedQty] = useState(initialQty);
+
+  useEffect(() => {
+    setSelectedQty(initialQty);
+  }, [initialQty]);
   const [pincode, setPincode] = useState("");
   const [pincodeError, setPincodeError] = useState("");
   const [pincodeSuccess, setPincodeSuccess] = useState("");
@@ -230,7 +238,7 @@ export const ProductPage: FC<ProductPageProps> = ({
             Add to Cart
           </button>
           <button
-            onClick={() => alert(`Proceeding to checkout for ${product.Product}!`)}
+            onClick={() => onBuyNow(selectedQty)}
             className="w-full bg-[#ffa41c] hover:bg-[#fa8900] text-white py-2.5 rounded-full text-xs md:text-sm font-semibold cursor-pointer border border-[#ff9900] transition active:scale-[0.98]"
           >
             Buy Now

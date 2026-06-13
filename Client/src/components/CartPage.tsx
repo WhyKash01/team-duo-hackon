@@ -70,6 +70,7 @@ export const CartPage: FC = () => {
 
   const itemsCount = cart?.items?.reduce((acc, item) => acc + item.quantity, 0) || 0;
   const isCartEmpty = !cart || !cart.items || cart.items.length === 0;
+  const isBusy = loading;
 
   return (
     <main className="max-w-[1500px] mx-auto p-4 md:py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start font-sans select-none text-[#0f1111] flex-1 w-full">
@@ -171,7 +172,7 @@ export const CartPage: FC = () => {
                         <label className="text-gray-500 font-semibold">Qty:</label>
                         <select
                           value={item.quantity}
-                          disabled={loading}
+                          disabled={isBusy}
                           onChange={(e) =>
                             dispatch(
                               updateItemQty({
@@ -192,7 +193,7 @@ export const CartPage: FC = () => {
 
                       {/* Delete Trigger */}
                       <button
-                        disabled={loading}
+                        disabled={isBusy}
                         onClick={() => dispatch(removeItem(item.product_id))}
                         className="text-[#007185] hover:text-[#c45500] hover:underline flex items-center gap-1 font-semibold cursor-pointer border-l border-gray-200 pl-4 disabled:opacity-60 transition"
                       >
@@ -224,14 +225,22 @@ export const CartPage: FC = () => {
             <span className="text-2xl font-bold">₹{cart?.subtotal || 0}</span>
           </div>
 
-          <div className="flex items-center gap-2 bg-green-50 p-2.5 rounded-sm border border-green-200 text-[11px] text-green-800 font-semibold leading-snug">
-            <span className="text-lg">🎉</span>
-            <span>Your order qualifies for FREE Delivery. Select this option at checkout.</span>
-          </div>
+          {(cart?.subtotal || 0) >= 499 ? (
+            <div className="flex items-center gap-2 bg-green-50 p-2.5 rounded-sm border border-green-200 text-[11px] text-green-800 font-semibold leading-snug">
+              <span className="text-lg">🎉</span>
+              <span>Your order qualifies for FREE Delivery!</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-yellow-50 p-2.5 rounded-sm border border-yellow-200 text-[11px] text-yellow-800 font-semibold leading-snug">
+              <span className="text-lg">🚚</span>
+              <span>Add ₹{(499 - (cart?.subtotal || 0)).toFixed(0)} more for FREE delivery (₹39 fee applies)</span>
+            </div>
+          )}
 
           <button
-            onClick={() => alert(`Proceeding to checkout for ${itemsCount} items!`)}
-            className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#e2b800] text-[#0f1111] py-2 rounded-lg text-xs md:text-sm font-semibold cursor-pointer border border-[#f5c200] shadow-sm transition active:scale-[0.98] mt-2"
+            onClick={() => navigate("/checkout")}
+            disabled={isBusy}
+            className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#e2b800] text-[#0f1111] py-2 rounded-lg text-xs md:text-sm font-semibold cursor-pointer border border-[#f5c200] shadow-sm transition active:scale-[0.98] mt-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             Proceed to Buy
           </button>
