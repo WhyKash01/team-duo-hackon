@@ -187,8 +187,9 @@ export const cartSlice = createSlice({
       })
       .addCase(fetchCart.fulfilled, (state, action: PayloadAction<Cart>) => {
         state.loading = false;
-        state.cart = action.payload;
-        state.count = action.payload.items.reduce((acc, item) => acc + item.quantity, 0);
+        const items = action.payload.items || [];
+        state.cart = { ...action.payload, items };
+        state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(fetchCart.rejected, (state, action) => {
         state.loading = false;
@@ -201,8 +202,9 @@ export const cartSlice = createSlice({
       })
       .addCase(addItemToCart.fulfilled, (state, action: PayloadAction<Cart>) => {
         state.loading = false;
-        state.cart = action.payload;
-        state.count = action.payload.items.reduce((acc, item) => acc + item.quantity, 0);
+        const items = action.payload.items || [];
+        state.cart = { ...action.payload, items };
+        state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(addItemToCart.rejected, (state, action) => {
         state.loading = false;
@@ -215,8 +217,9 @@ export const cartSlice = createSlice({
       })
       .addCase(updateItemQty.fulfilled, (state, action: PayloadAction<Cart>) => {
         state.loading = false;
-        state.cart = action.payload;
-        state.count = action.payload.items.reduce((acc, item) => acc + item.quantity, 0);
+        const items = action.payload.items || [];
+        state.cart = { ...action.payload, items };
+        state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(updateItemQty.rejected, (state, action) => {
         state.loading = false;
@@ -229,8 +232,9 @@ export const cartSlice = createSlice({
       })
       .addCase(removeItem.fulfilled, (state, action: PayloadAction<Cart>) => {
         state.loading = false;
-        state.cart = action.payload;
-        state.count = action.payload.items.reduce((acc, item) => acc + item.quantity, 0);
+        const items = action.payload.items || [];
+        state.cart = { ...action.payload, items };
+        state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(removeItem.rejected, (state, action) => {
         state.loading = false;

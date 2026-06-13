@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "./app/store";
-import { fetchCart, addItemToCart, resetCart } from "./features/cart/cartSlice";
+import { fetchCart, addItemToCart, resetCart, updateItemQty, removeItem } from "./features/cart/cartSlice";
 import { Header } from "./components/Header";
 import { SubHeader } from "./components/SubHeader";
 import { HeroSection } from "./components/HeroSection";
@@ -93,6 +93,7 @@ function App() {
   const location = useLocation();
   const cartCount = useSelector((state: RootState) => state.cart.count);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const cartItems = useSelector((state: RootState) => state.cart.cart?.items || []);
 
   // Fetch cart on login or mount
   useEffect(() => {
@@ -248,20 +249,56 @@ function App() {
                                       </div>
                                     </div>
 
-                                    {/* Direct Add to Cart Button */}
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (!isAuthenticated) {
-                                          navigate("/auth");
-                                        } else {
-                                          dispatch(addItemToCart({ product_id: product._id, quantity: 1 }));
-                                        }
-                                      }}
-                                      className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#f0b800] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold cursor-pointer border border-[#f5c200] transition active:scale-[0.97]"
-                                    >
-                                      Add to Cart
-                                    </button>
+                                     {/* Direct Add to Cart Button or Quantity Selector */}
+                                     {(() => {
+                                       const cartItem = cartItems.find((item) => item.product_id === product._id);
+                                       if (cartItem) {
+                                         return (
+                                           <div className="flex items-center justify-between w-full h-[28px] border border-gray-300 rounded-full overflow-hidden select-none bg-gray-50">
+                                             <button
+                                               onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 if (cartItem.quantity === 1) {
+                                                   dispatch(removeItem(product._id));
+                                                 } else {
+                                                   dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity - 1 }));
+                                                 }
+                                               }}
+                                               className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-l-full"
+                                             >
+                                               -
+                                             </button>
+                                             <span className="text-xs font-bold text-[#0f1111] flex-1 text-center">
+                                               {cartItem.quantity}
+                                             </span>
+                                             <button
+                                               onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                                               }}
+                                               className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-r-full"
+                                             >
+                                               +
+                                             </button>
+                                           </div>
+                                         );
+                                       }
+                                       return (
+                                         <button
+                                           onClick={(e) => {
+                                             e.stopPropagation();
+                                             if (!isAuthenticated) {
+                                               navigate("/auth");
+                                             } else {
+                                               dispatch(addItemToCart({ product_id: product._id, quantity: 1 }));
+                                             }
+                                           }}
+                                           className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#f0b800] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold cursor-pointer border border-[#f5c200] transition active:scale-[0.97]"
+                                         >
+                                           Add to Cart
+                                         </button>
+                                       );
+                                     })()}
                                   </div>
                                 </div>
                               );
