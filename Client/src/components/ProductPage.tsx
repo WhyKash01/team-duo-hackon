@@ -409,7 +409,7 @@ export const ProductPage: FC<ProductPageProps> = ({
                 const subId = sub._id?.$oid || sub.id;
                 const detail = substituteDetails[subId];
                 const image = detail?.image_small || (subId === "6a2e5e93cac35b4b62e274cf" ? "https://www.bigbasket.com/media/uploads/p/s/40214336_2-happychef-thai-red-curry-kit.jpg" : "https://via.placeholder.com/150?text=No+Image");
-                const isMatchHigh = sub.match_score >= 80;
+
 
                 return (
                   <div

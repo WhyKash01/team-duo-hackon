@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
 import { logout } from "../features/auth/authSlice";
-import { Search, MapPin, ShoppingCart, ChevronDown, Mic, MicOff } from "lucide-react";
+import { Search, MapPin, ShoppingCart, ChevronDown, Mic, MicOff, Zap } from "lucide-react";
 
 interface HeaderProps {
   cartCount?: number;
@@ -25,7 +25,6 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
-  const [searchCategory, setSearchCategory] = useState("All");
   const [searchInput, setSearchInput] = useState("");
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -118,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-[#131921] text-white flex flex-col md:flex-row items-center justify-between px-4 py-2 gap-2 md:gap-4 select-none sticky top-0 z-50">
+    <header className="bg-[#131921] text-white flex flex-col md:flex-row items-center justify-between px-4 py-2 gap-2 md:gap-4 select-none sticky top-0 z-50 border-b-[3px] border-[#49a353]">
       {/* Left: Logo & Location */}
       <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
         {/* Amazon Logo */}
@@ -126,8 +125,8 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onLogoClick}
           className="border border-transparent hover:border-white rounded px-2 py-1 cursor-pointer transition flex items-center"
         >
-          <span className="text-xl font-bold tracking-tight text-white flex items-baseline">
-            amazon<span className="text-[#febd69] text-sm font-semibold">.in</span>
+          <span className="text-xl font-bold tracking-tight text-white flex items-center">
+            amazon<span className="text-[#febd69] text-xl font-extrabold italic flex items-center ml-[1px]">Zap<Zap size={18} className="fill-[#febd69] text-[#febd69] ml-[1px]" /></span>
           </span>
         </div>
 
@@ -149,24 +148,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Center: Search Bar */}
       <div className="flex flex-1 items-center bg-white rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-[#f3a847] w-full max-w-4xl">
-        {/* Category Dropdown */}
-        <div className="relative group bg-[#f3f3f3] hover:bg-[#dadada] text-[#555] text-xs font-medium px-3 py-2.5 flex items-center gap-1 cursor-pointer border-r border-[#ccc] transition">
-          <span>{searchCategory}</span>
-          <ChevronDown size={12} />
-          <select 
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            value={searchCategory}
-            onChange={(e) => setSearchCategory(e.target.value)}
-          >
-            <option value="All">All Categories</option>
-            <option value="Deals">Deals</option>
-            <option value="Electronics">Electronics</option>
-            <option value="Fashion">Fashion</option>
-            <option value="Home">Home & Kitchen</option>
-            <option value="Health">Health & Personal Care</option>
-          </select>
-        </div>
-
         {/* Input */}
         <input
           type="text"

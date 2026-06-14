@@ -25,6 +25,9 @@ func SetupRouter() *gin.Engine {
 		// Product catalog routes
 		api.GET("/products", controllers.GetProducts(client))
 		api.GET("/search", controllers.SearchProducts(client))
+		api.GET("/search-category", controllers.SearchByCategory(client))
+		api.POST("/products/categories", controllers.GetProductsByCategories(client))
+		api.GET("/categories/top", controllers.GetTopCategories(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
 		api.GET("/products/:id/substitutes", controllers.GetProductSubstitutes(client))
 		api.GET("/task-shopping", controllers.TaskOrientedShopping(client))
@@ -40,6 +43,12 @@ func SetupRouter() *gin.Engine {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.POST("/logout", controllers.LogoutHandler(client))
+
+		// Favorite Category endpoints
+		protected.GET("/user/fav-categories", controllers.GetFavCategories(client))
+		protected.POST("/user/fav-categories", controllers.AddFavCategory(client))
+		protected.PUT("/user/fav-categories", controllers.UpdateFavCategories(client))
+		protected.DELETE("/user/fav-categories/:category", controllers.RemoveFavCategory(client))
 
 		// Cart management endpoints
 		protected.GET("/cart", controllers.GetCart(client))

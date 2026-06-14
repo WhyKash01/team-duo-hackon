@@ -301,6 +301,99 @@ func SearchProducts(client *mongo.Client) gin.HandlerFunc {
 	}
 }
 
+// SearchByCategory calls the ML engine /search-category endpoint to perform category vector search.
+func SearchByCategory(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		category := c.Query("category")
+		if category == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'category' is required"})
+			return
+		}
+
+		type CategorySearchQuery struct {
+			Category string `json:"category"`
+		}
+
+		payload := CategorySearchQuery{
+			Category: category,
+		}
+
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal payload for ML Engine"})
+			return
+		}
+
+		mlEngineURL := os.Getenv("ML_ENGINE_URL")
+		if mlEngineURL == "" {
+			mlEngineURL = "http://localhost:8000"
+		}
+		searchURL := mlEngineURL + "/search-category"
+
+		resp, err := http.Post(searchURL, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to call ML Engine /search-category: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response from ML Engine"})
+			return
+		}
+
+		var searchResults []interface{}
+		if err := json.Unmarshal(bodyBytes, &searchResults); err != nil {
+			c.JSON(resp.StatusCode, gin.H{
+				"success":       resp.StatusCode >= 200 && resp.StatusCode < 300,
+				"ml_engine_raw": string(bodyBytes),
+			})
+			return
+		}
+
+		var objectIDs []bson.ObjectID
+		for _, rawItem := range searchResults {
+			itemMap, ok := rawItem.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			idStr, ok := itemMap["id"].(string)
+			if !ok {
+				continue
+			}
+			objID, err := bson.ObjectIDFromHex(idStr)
+			if err == nil {
+				objectIDs = append(objectIDs, objID)
+			}
+		}
+
+		var fullProducts []models.Product
+		if len(objectIDs) > 0 {
+			productCollection := database.OpenCollection("Products", client)
+			cursor, err := productCollection.Find(ctx, bson.M{"_id": bson.M{"$in": objectIDs}})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch products from database"})
+				return
+			}
+			defer cursor.Close(ctx)
+
+			if err = cursor.All(ctx, &fullProducts); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse products from database"})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    fullProducts,
+		})
+	}
+}
+
 // Helper to clean JSON string
 func cleanJSON(input string) string {
 	input = strings.TrimSpace(input)
@@ -407,6 +500,132 @@ Return ONLY the raw JSON array, no markdown formatting or explanations.`, task)
 			"task":    task,
 			"items":   items,
 			"data":    fullProducts,
+		})
+	}
+}
+
+// GetTopCategories returns all categories by product count.
+func GetTopCategories(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		productCollection := database.OpenCollection("Products", client)
+
+		pipeline := mongo.Pipeline{
+			{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: "$Category"},
+				{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+				{Key: "image", Value: bson.D{{Key: "$first", Value: "$image_small"}}},
+			}}},
+			{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+		}
+
+		cursor, err := productCollection.Aggregate(ctx, pipeline)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to aggregate categories"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var results []bson.M
+		if err = cursor.All(ctx, &results); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse categories"})
+			return
+		}
+
+		var categories []map[string]string
+		for _, res := range results {
+			if id, ok := res["_id"].(string); ok && id != "" {
+				cat := map[string]string{"category": id}
+				if img, ok := res["image"].(string); ok && img != "" {
+					cat["image"] = img
+				}
+				categories = append(categories, cat)
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    categories,
+		})
+	}
+}
+
+// GetProductsByCategories accepts a list of categories in the request body and returns matching products with pagination.
+func GetProductsByCategories(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var req struct {
+			Categories []string `json:"categories" binding:"required,min=1"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body. 'categories' array is required."})
+			return
+		}
+
+		pageStr := c.DefaultQuery("page", "1")
+		limitStr := c.DefaultQuery("limit", "20")
+
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 {
+			limit = 20
+		}
+
+		productCollection := database.OpenCollection("Products", client)
+
+		var products []models.Product
+		
+		// Use $in to match any of the provided categories
+		filter := bson.M{"Category": bson.M{"$in": req.Categories}}
+		
+		total, err := productCollection.CountDocuments(ctx, filter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count products"})
+			return
+		}
+
+		skip := int64((page - 1) * limit)
+		findOptions := options.Find().
+			SetSkip(skip).
+			SetLimit(int64(limit))
+
+		cursor, err := productCollection.Find(ctx, filter, findOptions)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query products"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		if err = cursor.All(ctx, &products); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse products"})
+			return
+		}
+
+		// Ensure we don't return null for empty slices in JSON
+		if products == nil {
+			products = []models.Product{}
+		}
+
+		totalPages := (total + int64(limit) - 1) / int64(limit)
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    products,
+			"pagination": gin.H{
+				"current_page": page,
+				"limit":        limit,
+				"total_items":  total,
+				"total_pages":  totalPages,
+			},
 		})
 	}
 }

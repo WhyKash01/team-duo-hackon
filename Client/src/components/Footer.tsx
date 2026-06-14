@@ -1,5 +1,5 @@
 import React from "react";
-import { Globe, ChevronsUpDown } from "lucide-react";
+import { Globe, ChevronsUpDown, Zap } from "lucide-react";
 
 export const Footer: React.FC = () => {
   const scrollToTop = () => {
@@ -90,8 +90,8 @@ export const Footer: React.FC = () => {
       {/* Brand & Language Selectors */}
       <div className="bg-[#232f3e] py-9 flex flex-col sm:flex-row items-center justify-center gap-6 md:gap-16 border-b border-[#131a22] text-xs">
         <div className="border border-transparent px-3 py-1 cursor-pointer">
-          <span className="text-xl font-bold tracking-tight text-white flex items-baseline">
-            amazon<span className="text-[#febd69] text-xs font-semibold">.in</span>
+          <span className="text-xl font-bold tracking-tight text-white flex items-center">
+            amazon<span className="text-[#febd69] text-xl font-extrabold italic flex items-center ml-[1px]">Zap<Zap size={18} className="fill-[#febd69] text-[#febd69] ml-[1px]" /></span>
           </span>
         </div>
 

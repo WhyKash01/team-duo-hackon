@@ -306,3 +306,38 @@ def search_products(req: SearchQuery):
         ))
 
     return results
+
+class CategorySearchQuery(BaseModel):
+    category: str
+
+@app.post("/search-category", response_model=list[SubstituteResult])
+def search_by_category(req: CategorySearchQuery):
+    query_text = req.category.title()
+    embedding = model.encode(query_text).tolist()
+    category_pattern = f"%{req.category}%"
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT id, name, brand, category, price, 1 - (embedding <=> %s::vector) AS semantic_sim
+        FROM products 
+        WHERE category ILIKE %s
+        ORDER BY RANDOM()
+        LIMIT 500;
+    """, (embedding, category_pattern))
+    
+    semantic_matches = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    results = []
+    for row in semantic_matches:
+        c_id, c_name, c_brand, c_category, c_price, final_score = row
+        results.append(SubstituteResult(
+            id=c_id,
+            id_obj={"$oid": c_id},
+            name=c_name, brand=c_brand, category=c_category, price=float(c_price), 
+            match_score=round(final_score * 100, 2)
+        ))
+    return results

@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
 import { authStart, authSuccess, authFailure, clearError, logout } from "../features/auth/authSlice";
 import { z } from "zod";
-import { AlertCircle, CheckCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, Zap } from "lucide-react";
 
 // Form validation schemas
 const loginSchema = z.object({
@@ -147,8 +147,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onBackToMarketplace }) => {
         onClick={onBackToMarketplace}
         className="cursor-pointer mb-5 flex items-baseline hover:opacity-95"
       >
-        <span className="text-3xl font-extrabold tracking-tight text-[#111] flex items-baseline">
-          amazon<span className="text-[#e77600] text-lg font-bold">.in</span>
+        <span className="text-3xl font-extrabold tracking-tight text-[#111] flex items-center">
+          amazon<span className="text-[#e77600] text-2xl font-extrabold italic flex items-center ml-[1px]">Zap<Zap size={22} className="fill-[#e77600] text-[#e77600] ml-[1px]" /></span>
         </span>
       </div>
 

@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
 import { addItemToCart, updateItemQty, optimisticAddItem, optimisticUpdateQty, optimisticRemoveItem, removeItem, fetchCart } from "../features/cart/cartSlice";
-import { Star, Loader2 } from "lucide-react";
+import { Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import type { Product } from "./ProductPage";
 
 export const SearchPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const query = searchParams.get("q") || "";
+  const category = searchParams.get("category") || "";
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
 
@@ -23,15 +24,23 @@ export const SearchPage: React.FC = () => {
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
   const [stockErrorPopup, setStockErrorPopup] = useState<string | null>(null);
   const [localOutOfStock, setLocalOutOfStock] = useState<Set<string>>(new Set());
+  const sliderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!query) return;
+    if (!query && !category) return;
 
     const fetchSearchResults = async () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${apiBaseUrl}/search?q=${encodeURIComponent(query)}`);
+        let endpoint = "";
+        if (category) {
+          endpoint = `${apiBaseUrl}/search-category?category=${encodeURIComponent(category)}`;
+        } else if (query) {
+          endpoint = `${apiBaseUrl}/search?q=${encodeURIComponent(query)}`;
+        }
+
+        const res = await fetch(endpoint);
         if (!res.ok) throw new Error("Failed to fetch search results");
         const json = await res.json();
         if (json.success) {
@@ -52,14 +61,7 @@ export const SearchPage: React.FC = () => {
     } else {
       setLoading(false);
     }
-  }, [query, apiBaseUrl]);
-
-  const getRandomRating = (productId: string) => {
-    const code = productId.charCodeAt(productId.length - 1) || 5;
-    const rating = 4.0 + (code % 10) * 0.1;
-    const reviews = 50 + (code * 17) % 500;
-    return { rating: rating.toFixed(1), reviews };
-  };
+  }, [query, category, apiBaseUrl]);
 
   const sortedProducts = (() => {
     if (!isAuthenticated || !recommendationItems || recommendationItems.length === 0) return products;
@@ -68,154 +70,126 @@ export const SearchPage: React.FC = () => {
     return [...products].sort((a, b) => (scoreMap.get(b._id) || 0) - (scoreMap.get(a._id) || 0));
   })();
 
+  const slideProducts = (dir: 'left' | 'right') => {
+    if (sliderRef.current) {
+      sliderRef.current.scrollBy({ left: dir === 'left' ? -600 : 600, behavior: 'smooth' });
+    }
+  };
+
   return (
-    <div className="max-w-[1200px] mx-auto p-4 md:p-6 w-full animate-in fade-in duration-300">
-      <div className="mb-4">
-        <h1 className="text-xl md:text-2xl font-bold text-[#0f1111]">
-          Results for "{query}"
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {products.length} {products.length === 1 ? "result" : "results"} found
-        </p>
+    <div className="max-w-[1500px] mx-auto px-4 py-6 w-full">
+      {/* Section Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-[#0f1111]">
+            {category ? category : `Results for "${query}"`}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {products.length} {products.length === 1 ? "result" : "results"} found
+          </p>
+        </div>
+        <button
+          onClick={() => navigate("/")}
+          className="text-sm text-[#007185] hover:text-[#c45500] font-medium hidden sm:inline cursor-pointer"
+        >
+          ‹ Back to Home
+        </button>
       </div>
 
       {loading ? (
-        <div className="bg-white p-24 rounded shadow-sm flex flex-col items-center justify-center gap-3 w-full border border-gray-200">
-          <Loader2 size={36} className="text-[#e77600] animate-spin" />
+        <div className="py-24 flex flex-col items-center justify-center gap-3 w-full">
+          <Loader2 size={36} className="text-[#49a353] animate-spin" />
           <span className="text-sm text-gray-500 font-medium">Searching products...</span>
         </div>
       ) : error ? (
-        <div className="bg-white p-24 rounded shadow-sm flex flex-col items-center justify-center gap-4 w-full border border-gray-200">
+        <div className="py-24 flex flex-col items-center justify-center gap-4 w-full">
           <span className="text-red-600 font-semibold text-lg">{error}</span>
         </div>
       ) : products.length === 0 ? (
-        <div className="bg-white p-12 rounded shadow-sm flex flex-col items-center justify-center gap-4 w-full border border-gray-200">
-          <span className="text-gray-700 font-semibold text-lg">No results for "{query}"</span>
+        <div className="py-16 flex flex-col items-center justify-center gap-4 w-full">
+          <span className="text-gray-700 font-semibold text-lg">No results for {category ? `category "${category}"` : `"${query}"`}</span>
           <p className="text-sm text-gray-500">Try checking your spelling or use more general terms</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-          {sortedProducts.map((product) => {
-            const ratingData = getRandomRating(product._id);
-            const stock = (product as any).stock ?? 999;
-            const isOutOfStock = stock === 0 || localOutOfStock.has(product._id);
-            const isLowStock = stock > 0 && stock <= 5;
-            const recItem = recommendationItems.find((r) => r.product_id === product._id);
-            const cartItem = cartItems.find((item) => item.product_id === product._id);
-            const quantityInCart = cartItem ? cartItem.quantity : 0;
-            const atMax = quantityInCart >= stock;
-            
-            const displayPrice = cartItem ? cartItem.unit_price : product.Price;
-            const displayMRP = cartItem ? (cartItem.unit_price > product.MRP ? cartItem.unit_price : product.MRP) : product.MRP;
-            const hasDiscount = displayMRP > displayPrice;
-            const discountPct = hasDiscount ? Math.round(((displayMRP - displayPrice) / displayMRP) * 100) : 0;
+        <div className="relative group">
+          {/* Left Arrow */}
+          <button
+            onClick={() => slideProducts('left')}
+            className="absolute -left-2 top-1/2 -translate-y-1/2 z-20 bg-white text-gray-600 hover:text-gray-900 w-10 h-16 rounded-r-md shadow-[0_2px_8px_rgba(0,0,0,0.15)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 border border-l-0 border-gray-200"
+          >
+            <ChevronLeft size={22} />
+          </button>
 
-            return (
-              <div
-                key={product._id}
-                onClick={() => navigate(`/product/${product._id}`)}
-                className={`bg-white p-4 rounded-sm flex flex-col justify-between shadow-sm hover:shadow-md transition duration-200 group cursor-pointer border ${isOutOfStock ? "border-red-200 opacity-75" : "border-gray-100 hover:border-gray-300"}`}
-              >
-                <div>
-                  {/* Image with discount badge + stock badge */}
-                  <div className="h-[150px] w-full flex items-center justify-center overflow-hidden mb-3 bg-white p-1 rounded-sm relative">
-                    <img
-                      src={product.image_small}
-                      alt={product.Product}
-                      className={`max-h-full max-w-full object-contain group-hover:scale-[1.03] transition duration-200 select-none ${isOutOfStock ? "grayscale" : ""}`}
-                    />
-                    {hasDiscount && !isOutOfStock && (
-                      <span className="absolute top-1.5 left-1.5 bg-[#cc0c39] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
-                        {discountPct}% Off
-                      </span>
-                    )}
-                    {isOutOfStock && (
-                      <span className="absolute top-1.5 left-1.5 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
-                        Out of Stock
-                      </span>
-                    )}
-                    {isLowStock && !isOutOfStock && (
-                      <span className="absolute top-1.5 right-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
-                        Only {stock} left
-                      </span>
-                    )}
-                    {recItem && !isOutOfStock && (
-                      <span className="absolute bottom-1.5 left-1.5 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5">
-                        ⟳ Buy Again
-                      </span>
-                    )}
-                  </div>
+          <div
+            ref={sliderRef}
+            className="overflow-x-auto scrollbar-hide flex flex-wrap gap-4 scroll-smooth pb-2"
+          >
+            {sortedProducts.map((product) => {
+              const stock = (product as any).stock ?? 999;
+              const isOutOfStock = stock === 0 || localOutOfStock.has(product._id);
+              const isLowStock = stock > 0 && stock <= 5;
+              const recItem = recommendationItems.find((r) => r.product_id === product._id);
+              const cartItem = cartItems.find((item) => item.product_id === product._id);
+              const quantityInCart = cartItem ? cartItem.quantity : 0;
 
-                  {/* Brand & Name */}
-                  <span className="text-[10px] font-bold text-gray-400 block mb-0.5 tracking-wide uppercase truncate">
-                    {product.Brand}
-                  </span>
-                  <h3 className="text-sm text-[#0f1111] font-semibold leading-snug group-hover:text-[#007185] line-clamp-2 mb-1.5 min-h-[40px]">
-                    {product.Product}
-                  </h3>
+              const displayPrice = cartItem ? cartItem.unit_price : product.Price;
+              const displayMRP = cartItem ? (cartItem.unit_price > product.MRP ? cartItem.unit_price : product.MRP) : product.MRP;
+              const hasDiscount = displayMRP > displayPrice;
+              const discountPct = hasDiscount ? Math.round(((displayMRP - displayPrice) / displayMRP) * 100) : 0;
 
-                  {/* Star Ratings */}
-                  <div className="flex items-center gap-1 text-xs mb-1.5">
-                    <span className="text-orange-500 font-bold">{ratingData.rating}</span>
-                    <Star size={12} className="fill-orange-400 text-orange-400 inline" />
-                    <span className="text-gray-400">({ratingData.reviews})</span>
-                  </div>
+              return (
+                <div
+                  key={product._id}
+                  onClick={() => navigate(`/product/${product._id}`)}
+                  className={`shrink-0 w-[180px] bg-white rounded-lg flex flex-col justify-between transition duration-200 cursor-pointer border relative group/card ${
+                    isOutOfStock ? "border-red-200 opacity-70" : "border-gray-200 hover:shadow-md hover:border-gray-300"
+                  }`}
+                >
+                  {/* Badges */}
+                  {hasDiscount && !isOutOfStock && (
+                    <span className="absolute top-2 left-2 z-10 bg-[#cc0c39] text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                      {discountPct}% Off
+                    </span>
+                  )}
+                  {isOutOfStock && (
+                    <span className="absolute top-2 left-2 z-10 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                      Out of Stock
+                    </span>
+                  )}
+                  {isLowStock && !isOutOfStock && (
+                    <span className="absolute top-2 right-2 z-10 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                      Only {stock} left
+                    </span>
+                  )}
+                  {recItem && !isOutOfStock && (
+                    <span className="absolute top-2 left-2 z-10 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                      ⟳ Buy Again
+                    </span>
+                  )}
 
-                  {/* Packing / Quantity */}
-                  <span className="text-xs text-gray-500 font-medium block mb-2 truncate">
-                    {product.Quantity}
-                  </span>
-                </div>
-
-                {/* Price Tag & Add-to-Cart trigger */}
-                <div className="mt-2 flex flex-col gap-3">
-                  <div className="flex flex-col">
-                    <div className="flex items-baseline gap-1.5 flex-wrap">
-                      <span className="text-lg font-bold text-gray-900">₹{displayPrice}</span>
-                      {hasDiscount && (
-                        <span className="text-xs text-gray-400 line-through">₹{displayMRP}</span>
-                      )}
+                  {/* Image */}
+                  <div className="relative p-4 pb-2">
+                    <div className="h-[130px] w-full flex items-center justify-center">
+                      <img
+                        src={product.image_small}
+                        alt={product.Product}
+                        className={`max-h-full max-w-full object-contain select-none ${
+                          isOutOfStock ? "grayscale" : ""
+                        }`}
+                      />
                     </div>
-                  </div>
 
-                  {/* Direct Add to Cart Button or Quantity Selector */}
-                  {isOutOfStock ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/product/${product._id}`, { state: { scrollToSimilar: true } });
-                      }}
-                      className="w-full bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold border border-gray-300 transition cursor-pointer"
-                    >
-                      See Similar Product
-                    </button>
-                  ) : quantityInCart > 0 ? (
-                    <div className="flex items-center justify-between w-full h-[28px] border border-gray-300 rounded-full overflow-hidden select-none bg-gray-50">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (quantityInCart === 1) {
-                            dispatch(optimisticRemoveItem(product._id));
-                            dispatch(removeItem(product._id));
-                          } else {
-                            dispatch(optimisticUpdateQty({ product_id: product._id, quantity: quantityInCart - 1 }));
-                            dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart - 1 }));
-                          }
-                        }}
-                        className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-l-full"
-                      >
-                        -
-                      </button>
-                      <span className="text-xs font-bold text-[#0f1111] flex-1 text-center">
-                        {quantityInCart}
-                      </span>
+                    {/* Green + Button */}
+                    {!isOutOfStock && !cartItem && (
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!atMax) {
-                            dispatch(optimisticUpdateQty({ product_id: product._id, quantity: quantityInCart + 1 }));
+                          if (!isAuthenticated) {
+                            navigate("/auth");
+                          } else {
+                            dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
                             try {
-                              await dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart + 1 })).unwrap();
+                              await dispatch(addItemToCart({ product_id: product._id, quantity: 1 })).unwrap();
                             } catch (error: any) {
                               const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
                               if (errMsg.includes("out of stock") || errMsg.includes("available")) {
@@ -223,56 +197,116 @@ export const SearchPage: React.FC = () => {
                                 setLocalOutOfStock(prev => new Set(prev).add(product._id));
                                 dispatch(fetchCart());
                               } else {
-                                alert(error || "Failed to update cart");
+                                alert(error || "Failed to add to cart");
                                 dispatch(fetchCart());
                               }
                             }
                           }
                         }}
-                        disabled={atMax}
-                        className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-r-full disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="absolute bottom-0 right-3 w-8 h-8 bg-[#49a353] hover:bg-[#3d8b46] text-white rounded-full flex items-center justify-center shadow-md transition active:scale-90 cursor-pointer z-10"
+                        title="Add to cart"
                       >
-                        +
+                        <Plus size={18} strokeWidth={3} />
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!isAuthenticated) {
-                          navigate("/auth");
-                        } else {
-                          dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
-                          try {
-                            await dispatch(addItemToCart({ product_id: product._id, quantity: 1 })).unwrap();
-                          } catch (error: any) {
-                            const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
-                            if (errMsg.includes("out of stock") || errMsg.includes("available")) {
-                              setStockErrorPopup(product._id);
-                              setLocalOutOfStock(prev => new Set(prev).add(product._id));
-                              dispatch(fetchCart());
+                    )}
+
+                    {/* Quantity stepper */}
+                    {!isOutOfStock && cartItem && (
+                      <div className="absolute bottom-0 right-3 flex items-center h-8 bg-[#49a353] rounded-full shadow-md overflow-hidden z-10">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (quantityInCart === 1) {
+                              dispatch(optimisticRemoveItem(product._id));
+                              dispatch(removeItem(product._id));
                             } else {
-                              alert(error || "Failed to add to cart");
-                              dispatch(fetchCart());
+                              dispatch(optimisticUpdateQty({ product_id: product._id, quantity: quantityInCart - 1 }));
+                              dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart - 1 }));
                             }
-                          }
-                        }
-                      }}
-                      className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#f0b800] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold cursor-pointer border border-[#f5c200] transition active:scale-[0.97]"
-                    >
-                      Add to Cart
-                    </button>
-                  )}
+                          }}
+                          className="text-white px-2 h-full font-bold cursor-pointer transition text-sm flex items-center justify-center hover:bg-[#3d8b46] active:scale-90"
+                        >
+                          −
+                        </button>
+                        <span className="text-white text-xs font-bold px-2">
+                          {quantityInCart}
+                        </span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const atMax = quantityInCart >= stock;
+                            if (!atMax) {
+                              dispatch(optimisticUpdateQty({ product_id: product._id, quantity: quantityInCart + 1 }));
+                              try {
+                                await dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart + 1 })).unwrap();
+                              } catch (error: any) {
+                                const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                                if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                                  setStockErrorPopup(product._id);
+                                  setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                                  dispatch(fetchCart());
+                                } else {
+                                  alert(error || "Failed to update cart");
+                                  dispatch(fetchCart());
+                                }
+                              }
+                            }
+                          }}
+                          className="text-white px-2 h-full font-bold cursor-pointer transition text-sm flex items-center justify-center hover:bg-[#3d8b46] active:scale-90"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
+
+                    {/* See Similar for out of stock */}
+                    {isOutOfStock && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/product/${product._id}`, { state: { scrollToSimilar: true } });
+                        }}
+                        className="absolute bottom-0 right-3 bg-gray-200 hover:bg-gray-300 text-gray-700 text-[9px] font-semibold px-2 py-1 rounded-full cursor-pointer transition z-10"
+                      >
+                        Similar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Product Info */}
+                  <div className="p-3 pt-2 flex flex-col gap-1">
+                    <h3 className="text-xs text-[#0f1111] font-medium leading-snug line-clamp-2 min-h-[32px]">
+                      {product.Product}
+                    </h3>
+                    <span className="text-[10px] text-gray-400 truncate">
+                      {product.Quantity}
+                    </span>
+                    <div className="flex items-baseline gap-1.5 mt-1">
+                      <span className="text-sm font-bold text-[#0f1111]">₹{displayPrice}</span>
+                      {hasDiscount && (
+                        <span className="text-[10px] text-gray-400 line-through">₹{displayMRP}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          {/* Right Arrow */}
+          <button
+            onClick={() => slideProducts('right')}
+            className="absolute -right-2 top-1/2 -translate-y-1/2 z-20 bg-white text-gray-600 hover:text-gray-900 w-10 h-16 rounded-l-md shadow-[0_2px_8px_rgba(0,0,0,0.15)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 border border-r-0 border-gray-200"
+          >
+            <ChevronRight size={22} />
+          </button>
         </div>
       )}
+
       {/* Out of Stock Popup */}
       {stockErrorPopup && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col items-center text-center gap-4 animate-in zoom-in-95">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full flex flex-col items-center text-center gap-4 shadow-2xl">
             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-2">
               <span className="text-2xl font-bold">!</span>
             </div>
@@ -286,13 +320,13 @@ export const SearchPage: React.FC = () => {
                   navigate(`/product/${stockErrorPopup}`, { state: { scrollToSimilar: true } });
                   setStockErrorPopup(null);
                 }}
-                className="w-full py-2.5 bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] font-semibold rounded-full border border-[#f5c200] transition cursor-pointer"
+                className="w-full py-2.5 bg-[#49a353] hover:bg-[#3d8b46] text-white font-semibold rounded-full transition cursor-pointer"
               >
                 See Similar Products
               </button>
               <button
                 onClick={() => setStockErrorPopup(null)}
-                className="w-full py-2.5 bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] font-semibold rounded-full border border-gray-300 transition cursor-pointer"
+                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-[#0f1111] font-semibold rounded-full transition cursor-pointer"
               >
                 Close
               </button>

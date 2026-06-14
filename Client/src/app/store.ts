@@ -4,6 +4,7 @@ import cartStabilityReducer from "../features/cart/cartStabilitySlice";
 import authReducer from "../features/auth/authSlice";
 import orderReducer from "../features/order/orderSlice";
 import recommendationReducer from "../features/recommendations/recommendationSlice";
+import favCategoryReducer from "../features/favCategory/favCategorySlice";
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     auth: authReducer,
     order: orderReducer,
     recommendations: recommendationReducer,
+    favCategory: favCategoryReducer,
   }
 });
 

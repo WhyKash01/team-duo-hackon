@@ -23,7 +23,7 @@ type Address struct {
 	State       string        `json:"state" bson:"state" validate:"required"`
 	ZipCode     string        `json:"zip_code" bson:"zip_code" validate:"required"`
 	Latitude    float64       `json:"latitude" bson:"latitude" validate:"required"`   // Critical for Q-commerce routing
-	Longitude   float64       `json:"longitude" bson:"longitude" validate:"required"`  // Critical for Q-commerce routing
+	Longitude   float64       `json:"longitude" bson:"longitude" validate:"required"` // Critical for Q-commerce routing
 	IsDefault   bool          `json:"is_default" bson:"is_default"`
 }
 
@@ -61,4 +61,11 @@ type UserResponse struct {
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
 	Addresses    []Address `json:"addresses,omitempty"`
+}
+
+// FavCategory tracks a user's favorite product categories
+type FavCategory struct {
+	ID         bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
+	UserID     bson.ObjectID `json:"user_id" bson:"user_id" validate:"required"`
+	Categories []string      `json:"categories" bson:"categories"`
 }

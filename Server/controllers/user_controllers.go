@@ -14,6 +14,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -274,5 +275,152 @@ func RefreshTokenHandler(client *mongo.Client) gin.HandlerFunc {
 		c.SetCookie("refresh_token", newRefreshToken, 604800, "/", domain, true, true) //expires in 1 week
 
 		c.JSON(http.StatusOK, gin.H{"message": "Tokens refreshed"})
+	}
+}
+
+// GetFavCategories retrieves the user's favorite categories.
+func GetFavCategories(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr, exists := c.Get("userId")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		favCollection := database.OpenCollection("favCategory", client)
+
+		var fav models.FavCategory
+		err := favCollection.FindOne(ctx, bson.M{"user_id": userIDStr}).Decode(&fav)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusOK, gin.H{"success": true, "data": []string{}})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve favorite categories"})
+			return
+		}
+
+		if fav.Categories == nil {
+			fav.Categories = []string{}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": fav.Categories})
+	}
+}
+
+// AddFavCategory adds a single category to the user's favorites.
+func AddFavCategory(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr, exists := c.Get("userId")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		var req struct {
+			Category string `json:"category" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request. 'category' string is required."})
+			return
+		}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		favCollection := database.OpenCollection("favCategory", client)
+
+		// Upsert: Create if doesn't exist, addToSet ensures uniqueness
+		filter := bson.M{"user_id": userIDStr}
+		update := bson.M{
+			"$addToSet": bson.M{"categories": req.Category},
+		}
+
+		opts := options.UpdateOne().SetUpsert(true)
+		_, err := favCollection.UpdateOne(ctx, filter, update, opts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add favorite category"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Category added to favorites"})
+	}
+}
+
+// RemoveFavCategory removes a single category from the user's favorites.
+func RemoveFavCategory(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr, exists := c.Get("userId")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		category := c.Param("category")
+		if category == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Category parameter is required"})
+			return
+		}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		favCollection := database.OpenCollection("favCategory", client)
+
+		filter := bson.M{"user_id": userIDStr}
+		update := bson.M{
+			"$pull": bson.M{"categories": category},
+		}
+
+		_, err := favCollection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove favorite category"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Category removed from favorites"})
+	}
+}
+
+// UpdateFavCategories replaces the entire array of favorite categories.
+func UpdateFavCategories(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr, exists := c.Get("userId")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		var req struct {
+			Categories []string `json:"categories" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request. 'categories' array is required."})
+			return
+		}
+
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		favCollection := database.OpenCollection("favCategory", client)
+
+		filter := bson.M{"user_id": userIDStr}
+		update := bson.M{
+			"$set": bson.M{"categories": req.Categories},
+		}
+
+		opts := options.UpdateOne().SetUpsert(true)
+		_, err := favCollection.UpdateOne(ctx, filter, update, opts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update favorite categories"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Favorite categories updated"})
 	}
 }
