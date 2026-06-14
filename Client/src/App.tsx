@@ -16,6 +16,7 @@ import { OrderConfirmation } from "./components/OrderConfirmation";
 import { OrdersPage } from "./components/OrdersPage";
 import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
 import { SearchPage } from "./components/SearchPage";
+import { TaskShoppingPage } from "./components/TaskShoppingPage";
 import { Star, Loader2 } from "lucide-react";
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from "react-router-dom";
 
@@ -430,6 +431,12 @@ function App() {
               <Route
                 path="/search"
                 element={<SearchPage />}
+              />
+
+              {/* Task Shopping Route */}
+              <Route
+                path="/task-shopping"
+                element={<TaskShoppingPage />}
               />
 
               {/* Product Page Detail Route */}

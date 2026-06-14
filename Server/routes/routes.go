@@ -27,6 +27,7 @@ func SetupRouter() *gin.Engine {
 		api.GET("/search", controllers.SearchProducts(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
 		api.GET("/products/:id/substitutes", controllers.GetProductSubstitutes(client))
+		api.GET("/task-shopping", controllers.TaskOrientedShopping(client))
 
 		// Admin routes (unprotected for demo purposes)
 		api.POST("/admin/update-price", controllers.UpdateProductPrice(client))

@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"server/database"
 	"server/models"
+	"server/services"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -395,6 +398,116 @@ func SearchProducts(client *mongo.Client) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
+			"data":    fullProducts,
+		})
+	}
+}
+
+// Helper to clean JSON string
+func cleanJSON(input string) string {
+	input = strings.TrimSpace(input)
+	if strings.HasPrefix(input, "```json") {
+		input = strings.TrimPrefix(input, "```json")
+		input = strings.TrimSuffix(input, "```")
+	} else if strings.HasPrefix(input, "```") {
+		input = strings.TrimPrefix(input, "```")
+		input = strings.TrimSuffix(input, "```")
+	}
+	return strings.TrimSpace(input)
+}
+
+// TaskOrientedShopping handles the LLM task generation and searching
+func TaskOrientedShopping(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 60*time.Second) // generous timeout for LLM
+		defer cancel()
+
+		task := c.Query("task")
+		if task == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Task query 'task' is required"})
+			return
+		}
+
+		prompt := fmt.Sprintf(`You are a shopping assistant. A user wants to do the following task: "%s". 
+Return a raw JSON array of 3 to 6 generic grocery item names needed to complete this task. 
+Example: ["spaghetti", "eggs", "bacon", "parmesan cheese"]. 
+Return ONLY the raw JSON array, no markdown formatting or explanations.`, task)
+
+		llmResp, err := services.GenerateResponse(ctx, prompt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate LLM response: " + err.Error()})
+			return
+		}
+
+		cleanStr := cleanJSON(llmResp)
+		var items []string
+		if err := json.Unmarshal([]byte(cleanStr), &items); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse LLM response", "raw_response": llmResp})
+			return
+		}
+
+		mlEngineURL := os.Getenv("ML_ENGINE_URL")
+		if mlEngineURL == "" {
+			mlEngineURL = "http://localhost:8000"
+		}
+		searchURL := mlEngineURL + "/search"
+
+		var fullProducts []models.Product
+		productCollection := database.OpenCollection("Products", client)
+		seenIDs := make(map[string]bool)
+
+		for _, item := range items {
+			type SearchQuery struct {
+				Query string `json:"query"`
+			}
+			payload := SearchQuery{Query: item}
+			jsonData, _ := json.Marshal(payload)
+
+			resp, err := http.Post(searchURL, "application/json", bytes.NewBuffer(jsonData))
+			if err != nil {
+				continue // skip on failure
+			}
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			var searchResults []interface{}
+			if err := json.Unmarshal(bodyBytes, &searchResults); err == nil {
+				// Take top 3 products per ingredient
+				limit := 3
+				for i, rawItem := range searchResults {
+					if i >= limit {
+						break
+					}
+					itemMap, ok := rawItem.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					idStr, ok := itemMap["id"].(string)
+					if !ok {
+						continue
+					}
+					if seenIDs[idStr] {
+						limit++ // Try to get another one if this is a duplicate
+						continue
+					}
+					objID, err := bson.ObjectIDFromHex(idStr)
+					if err != nil {
+						continue
+					}
+					var product models.Product
+					err = productCollection.FindOne(ctx, bson.M{"_id": objID}).Decode(&product)
+					if err == nil {
+						fullProducts = append(fullProducts, product)
+						seenIDs[idStr] = true
+					}
+				}
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"task":    task,
+			"items":   items,
 			"data":    fullProducts,
 		})
 	}

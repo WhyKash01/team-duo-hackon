@@ -1,36 +1,21 @@
-import React from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import heroBannerImg from "../assets/amazon_hero.png";
+import { Search, Sparkles } from "lucide-react";
 
 export const HeroSection: React.FC = () => {
-  const categories = [
-    {
-      title: "Health & Personal Care",
-      image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&auto=format&fit=crop&q=60",
-      linkText: "Shop now",
-      desc: "Dettol, sanitizers, and more"
-    },
-    {
-      title: "Up to 60% off | Electronics",
-      image: "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=300&auto=format&fit=crop&q=60",
-      linkText: "See all deals",
-      desc: "Smartphones, watches & laptops"
-    },
-    {
-      title: "Home & Kitchen Essentials",
-      image: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=300&auto=format&fit=crop&q=60",
-      linkText: "Explore kitchenware",
-      desc: "Cookware, dining & decor"
-    },
-    {
-      title: "Join Prime Today",
-      image: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=300&auto=format&fit=crop&q=60",
-      linkText: "Start 30-day free trial",
-      desc: "Free fast shipping & video streaming"
+  const [task, setTask] = useState("");
+  const navigate = useNavigate();
+
+  const handleTaskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (task.trim()) {
+      navigate(`/task-shopping?task=${encodeURIComponent(task.trim())}`);
     }
-  ];
+  };
 
   return (
-    <div className="relative bg-[#eaeded] min-h-[600px] pb-10">
+    <div className="relative bg-[#eaeded] min-h-[500px] pb-10">
       {/* Banner Image Container */}
       <div className="relative w-full overflow-hidden">
         {/* Banner */}
@@ -43,35 +28,40 @@ export const HeroSection: React.FC = () => {
         <div className="absolute inset-0 bg-gradient-to-t from-[#eaeded] via-transparent to-transparent pointer-events-none" />
       </div>
 
-      {/* Overlaid Grid Cards */}
-      <div className="max-w-[1500px] mx-auto px-4 -mt-16 sm:-mt-32 md:-mt-44 relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {categories.map((cat, idx) => (
-          <div
-            key={idx}
-            className="bg-white p-5 rounded-sm flex flex-col justify-between shadow-md hover:shadow-lg transition group cursor-pointer duration-300"
-          >
-            <div>
-              <h2 className="text-xl font-bold text-[#0f1111] mb-3 leading-tight tracking-tight">
-                {cat.title}
-              </h2>
-              <div className="h-[200px] w-full overflow-hidden bg-gray-50 flex items-center justify-center rounded-sm">
-                <img
-                  src={cat.image}
-                  alt={cat.title}
-                  className="max-h-full max-w-full object-contain group-hover:scale-[1.03] transition duration-300 select-none"
-                />
-              </div>
-              <p className="text-sm text-gray-500 mt-2 font-medium">{cat.desc}</p>
-            </div>
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              className="text-xs text-[#007185] hover:text-[#c45500] hover:underline font-bold mt-4 inline-block transition"
-            >
-              {cat.linkText}
-            </a>
+      {/* Task-Oriented Shopping Block Overlaid */}
+      <div className="max-w-[800px] mx-auto px-4 -mt-20 sm:-mt-32 md:-mt-44 relative z-10">
+        <div className="bg-white p-6 md:p-10 rounded-lg shadow-xl border border-gray-200">
+          <div className="flex items-center gap-3 mb-4 text-[#0f1111]">
+            <Sparkles className="text-[#e77600]" size={28} />
+            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+              Task-Oriented Shopping
+            </h2>
           </div>
-        ))}
+          <p className="text-gray-600 mb-6 font-medium text-sm md:text-base">
+            Tell us what you want to do (e.g., "I want to cook spaghetti carbonara" or "I need to clean the bathroom"), and our AI will instantly build your shopping list!
+          </p>
+          <form onSubmit={handleTaskSubmit} className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search size={20} className="text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                placeholder="What do you want to accomplish today?"
+                className="w-full pl-11 pr-4 py-3 md:py-4 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#f5c200] focus:border-[#f5c200] text-base"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!task.trim()}
+              className="bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] px-8 py-3 md:py-4 rounded-md font-bold shadow-sm border border-[#f5c200] transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              Build My List
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -19,6 +19,11 @@ func main() {
 	// Initialize RabbitMQ
 	services.InitRabbitMQ()
 
+	// Initialize LLM Client
+	if err := services.InitLLM(); err != nil {
+		log.Printf("LLM Initialization Error: %v", err)
+	}
+
 	// Hydrate inventory from MongoDB into Redis
 	services.HydrateInventory(database.Client)
 
