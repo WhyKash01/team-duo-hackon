@@ -22,9 +22,9 @@ seeding_status = {
 
 # Local Docker Database Config
 DB_CONFIG = {
-    "dbname": "postgres",
+    "dbname": "hackon",
     "user": "postgres",
-    "password": "mysecretpassword",
+    "password": "postgres",
     "host": "localhost",
     "port": "5432"
 }
@@ -305,4 +305,4 @@ def search_products(req: SearchQuery):
             match_score=round(final_score * 100, 2)
         ))
 
-    return results
+    return results

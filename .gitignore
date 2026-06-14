@@ -43,6 +43,9 @@ lerna-debug.log*
 Thumbs.db
 
 # ML Engine / Python
+ml_engine/.venv/
 ml_engine/venv/
 ml_engine/__pycache__/
 ml_engine/*.pyc
+.venv/
+__pycache__/
