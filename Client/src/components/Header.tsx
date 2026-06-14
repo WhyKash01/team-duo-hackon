@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
 import { logout } from "../features/auth/authSlice";
-import { Search, MapPin, ShoppingCart, ChevronDown } from "lucide-react";
+import { Search, MapPin, ShoppingCart, ChevronDown, Mic, MicOff } from "lucide-react";
 
 interface HeaderProps {
   cartCount?: number;
@@ -27,10 +27,12 @@ export const Header: React.FC<HeaderProps> = ({
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
   const [searchCategory, setSearchCategory] = useState("All");
   const [searchInput, setSearchInput] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const handleSearch = () => {
-    if (onSearch) {
-      onSearch(searchInput);
+    if (onSearch && searchInput.trim()) {
+      onSearch(searchInput.trim());
     }
   };
 
@@ -38,6 +40,63 @@ export const Header: React.FC<HeaderProps> = ({
     if (e.key === "Enter") {
       handleSearch();
     }
+  };
+
+  const startVoiceInput = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice search is not supported in your browser. Try Chrome or Edge.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setSearchInput(transcript);
+    };
+
+    recognition.onspeechend = () => {
+      recognition.stop();
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+      if (event.error === "not-allowed") {
+        alert("Microphone access denied. Please allow microphone in browser settings.");
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error("Failed to start speech recognition:", e);
+      setIsListening(false);
+    }
+  };
+
+  const stopVoiceInput = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
   };
 
   const handleLogout = async () => {
@@ -111,12 +170,26 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Input */}
         <input
           type="text"
-          placeholder="Search Amazon.in"
+          placeholder={isListening ? "Listening..." : "Search Amazon.in"}
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 px-3 py-2 text-sm text-black outline-none w-full"
+          data-voice-search
+          className={`flex-1 px-3 py-2 text-sm text-black outline-none w-full ${isListening ? "bg-red-50" : ""}`}
         />
+
+        {/* Voice Search Button */}
+        <button
+          onClick={isListening ? stopVoiceInput : startVoiceInput}
+          className={`px-3 flex items-center justify-center cursor-pointer transition border-l border-[#ccc] ${
+            isListening 
+              ? "bg-red-100 text-red-600 animate-pulse" 
+              : "bg-[#f3f3f3] hover:bg-[#dadada] text-[#555]"
+          }`}
+          title={isListening ? "Stop listening" : "Voice search"}
+        >
+          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+        </button>
 
         {/* Search Button */}
         <button 

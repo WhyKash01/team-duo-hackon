@@ -213,10 +213,16 @@ function App() {
               onCartClick={() => navigate("/cart")}
               onReorderClick={() => navigate("/orders")}
               onSearch={(query) => {
-                 if (query.trim()) {
-                   navigate(`/search?q=${encodeURIComponent(query)}`);
-                 } else {
+                 if (!query.trim()) {
                    navigate("/");
+                   return;
+                 }
+                 // Smart routing: detect task/intent vs simple search
+                 const taskPatterns = /\b(make|cook|prepare|recipe|bake|fry|ingredients for|i want to|how to|need for|items for|shopping for)\b/i;
+                 if (taskPatterns.test(query)) {
+                   navigate(`/task-shopping?task=${encodeURIComponent(query)}`);
+                 } else {
+                   navigate(`/search?q=${encodeURIComponent(query)}`);
                  }
               }}
             />

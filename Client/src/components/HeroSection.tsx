@@ -1,17 +1,73 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import heroBannerImg from "../assets/amazon_hero.png";
-import { Search, Sparkles } from "lucide-react";
+import { Search, Sparkles, Mic, MicOff } from "lucide-react";
 
 export const HeroSection: React.FC = () => {
   const [task, setTask] = useState("");
   const navigate = useNavigate();
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const handleTaskSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (task.trim()) {
       navigate(`/task-shopping?task=${encodeURIComponent(task.trim())}`);
     }
+  };
+
+  const startVoice = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice input not supported. Try Chrome or Edge.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setTask(transcript);
+    };
+
+    recognition.onspeechend = () => {
+      recognition.stop();
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+      if (event.error === "not-allowed") {
+        alert("Microphone access denied. Please allow microphone in browser settings.");
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error("Failed to start speech recognition:", e);
+      setIsListening(false);
+    }
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
   };
 
   return (
@@ -49,9 +105,23 @@ export const HeroSection: React.FC = () => {
                 type="text"
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
-                placeholder="What do you want to accomplish today?"
-                className="w-full pl-11 pr-4 py-3 md:py-4 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#f5c200] focus:border-[#f5c200] text-base"
+                placeholder={isListening ? "🎤 Listening... speak now" : "What do you want to accomplish today?"}
+                data-task-input
+                className={`w-full pl-11 pr-14 py-3 md:py-4 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[#f5c200] focus:border-[#f5c200] text-base ${
+                  isListening ? "border-red-400 bg-red-50" : "border-gray-300"
+                }`}
               />
+              {/* Mic button inside input */}
+              <button
+                type="button"
+                onClick={isListening ? stopVoice : startVoice}
+                className={`absolute inset-y-0 right-0 pr-4 flex items-center cursor-pointer transition ${
+                  isListening ? "text-red-500 animate-pulse" : "text-gray-400 hover:text-[#e77600]"
+                }`}
+                title={isListening ? "Stop listening" : "Voice input"}
+              >
+                {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+              </button>
             </div>
             <button
               type="submit"
