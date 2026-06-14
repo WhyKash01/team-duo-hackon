@@ -20,13 +20,32 @@ seeding_status = {
     "error": None
 }
 
+import os
+
+# Try to load environment variables from the Server/.env file
+def load_dotenv():
+    try:
+        paths = ["../Server/.env", "Server/.env", ".env"]
+        for path in paths:
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, val = line.split("=", 1)
+                            os.environ[key] = val.strip()
+    except Exception as e:
+        print(f"Error loading .env: {e}")
+
+load_dotenv()
+
 # Local Docker Database Config
 DB_CONFIG = {
-    "dbname": "postgres",
-    "user": "postgres",
-    "password": "mysecretpassword",
-    "host": "localhost",
-    "port": "5432"
+    "dbname": os.getenv("POSTGRES_DB", "hackon"),
+    "user": os.getenv("POSTGRES_USER", "postgres"),
+    "password": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": os.getenv("POSTGRES_PORT", "5432")
 }
 
 def get_db_connection():
