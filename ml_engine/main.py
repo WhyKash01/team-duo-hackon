@@ -244,30 +244,65 @@ class SearchQuery(BaseModel):
 
 @app.post("/search", response_model=list[SubstituteResult])
 def search_products(req: SearchQuery):
-    embedding = model.encode(req.query).tolist()
+    # Title-case the query to improve semantic matching against Title Cased product names
+    query_text = req.query.title()
+    embedding = model.encode(query_text).tolist()
     
     conn = get_db_connection()
     cur = conn.cursor()
     
+    # 1. Keyword Exact Matches (using ILIKE)
+    query_pattern = f"%{req.query}%"
+    cur.execute("""
+        SELECT id, name, brand, category, price, 1 - (embedding <=> %s::vector) AS semantic_sim
+        FROM products 
+        WHERE name ILIKE %s OR brand ILIKE %s OR category ILIKE %s
+        ORDER BY semantic_sim DESC
+        LIMIT 30;
+    """, (embedding, query_pattern, query_pattern, query_pattern))
+    keyword_matches = cur.fetchall()
+
+    # 2. Semantic Vector Matches
     cur.execute("""
         SELECT id, name, brand, category, price, 1 - (embedding <=> %s::vector) AS semantic_sim
         FROM products 
         ORDER BY embedding <=> %s::vector ASC
-        LIMIT 20;
+        LIMIT 30;
     """, (embedding, embedding))
+    semantic_matches = cur.fetchall()
     
-    candidates = cur.fetchall()
     cur.close()
     conn.close()
 
+    seen_ids = set()
+    candidates = []
+
+    # Process Keyword Matches (Boost score by +0.5 to prioritize direct hits)
+    for row in keyword_matches:
+        if row[0] not in seen_ids:
+            c_id, c_name, c_brand, c_category, c_price, semantic_sim = row
+            candidates.append((c_id, c_name, c_brand, c_category, c_price, semantic_sim + 0.5))
+            seen_ids.add(c_id)
+
+    # Process Semantic Matches
+    for row in semantic_matches:
+        if row[0] not in seen_ids:
+            c_id, c_name, c_brand, c_category, c_price, semantic_sim = row
+            candidates.append((c_id, c_name, c_brand, c_category, c_price, semantic_sim))
+            seen_ids.add(c_id)
+
+    # Sort by combined score
+    candidates.sort(key=lambda x: x[5], reverse=True)
+    top_candidates = candidates[:20]
+
     results = []
-    for row in candidates:
-        c_id, c_name, c_brand, c_category, c_price, semantic_sim = row
+    for row in top_candidates:
+        c_id, c_name, c_brand, c_category, c_price, final_score = row
         results.append(SubstituteResult(
             id=c_id,
             id_obj={"$oid": c_id},
             name=c_name, brand=c_brand, category=c_category, price=float(c_price), 
-            match_score=round(semantic_sim * 100, 2)
+            match_score=round(final_score * 100, 2)
         ))
 
     return results
