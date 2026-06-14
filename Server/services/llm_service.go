@@ -34,7 +34,7 @@ func GenerateResponse(ctx context.Context, prompt string) (string, error) {
 		return "", fmt.Errorf("LLMClient is not initialized - missing API key?")
 	}
 
-	model := LLMClient.GenerativeModel("gemini-2.5-flash")
+	model := LLMClient.GenerativeModel("gemini-flash-latest")
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {

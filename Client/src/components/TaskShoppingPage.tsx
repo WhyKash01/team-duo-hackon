@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
-import { addItemToCart, updateItemQty, optimisticAddItem, optimisticUpdateQty, optimisticRemoveItem, removeItem } from "../features/cart/cartSlice";
+import { addItemToCart, updateItemQty, optimisticAddItem, optimisticUpdateQty, optimisticRemoveItem, removeItem, fetchCart } from "../features/cart/cartSlice";
 import { Star, Loader2, CheckCircle2 } from "lucide-react";
 import type { Product } from "./ProductPage";
 
@@ -19,8 +19,11 @@ export const TaskShoppingPage: React.FC = () => {
 
   const cartItems = useSelector((state: RootState) => state.cart.cart?.items || []);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const recommendationItems = useSelector((state: RootState) => state.recommendations?.items || []);
 
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+  const [stockErrorPopup, setStockErrorPopup] = useState<string | null>(null);
+  const [localOutOfStock, setLocalOutOfStock] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!taskQuery) return;
@@ -30,8 +33,12 @@ export const TaskShoppingPage: React.FC = () => {
       setError(null);
       try {
         const res = await fetch(`${apiBaseUrl}/task-shopping?task=${encodeURIComponent(taskQuery)}`);
-        if (!res.ok) throw new Error("Failed to generate shopping list");
         const json = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(json.error || "Failed to generate shopping list");
+        }
+        
         if (json.success) {
           setProducts(json.data || []);
           setItems(json.items || []);
@@ -60,6 +67,13 @@ export const TaskShoppingPage: React.FC = () => {
     return { rating: rating.toFixed(1), reviews };
   };
 
+  const sortedProducts = (() => {
+    if (!isAuthenticated || !recommendationItems || recommendationItems.length === 0) return products;
+    const scoreMap = new Map<string, number>();
+    recommendationItems.forEach((rec) => scoreMap.set(rec.product_id, rec.score));
+    return [...products].sort((a, b) => (scoreMap.get(b._id) || 0) - (scoreMap.get(a._id) || 0));
+  })();
+
   return (
     <div className="max-w-[1500px] mx-auto p-4 md:p-6 w-full animate-in fade-in duration-300 relative z-20">
       <div className="mb-6 bg-white p-6 rounded-md shadow-sm border border-gray-200">
@@ -70,10 +84,10 @@ export const TaskShoppingPage: React.FC = () => {
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="text-sm font-semibold text-gray-700 self-center mr-2">AI Suggested Items:</span>
             {items.map((item, idx) => (
-               <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#f0f2f2] text-[#0f1111] text-sm rounded-full border border-gray-300 font-medium">
-                 <CheckCircle2 size={14} className="text-[#007185]" />
-                 {item}
-               </span>
+              <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#f0f2f2] text-[#0f1111] text-sm rounded-full border border-gray-300 font-medium">
+                <CheckCircle2 size={14} className="text-[#007185]" />
+                {item}
+              </span>
             ))}
           </div>
         )}
@@ -96,16 +110,20 @@ export const TaskShoppingPage: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-          {products.map((product) => {
+          {sortedProducts.map((product) => {
             const ratingData = getRandomRating(product._id);
-            const hasDiscount = product.MRP > product.Price;
-            const stock = (product as any).stock ?? 999;
-            const isOutOfStock = stock === 0;
-            const isLowStock = stock > 0 && stock <= 5;
-            
             const cartItem = cartItems.find((item) => item.product_id === product._id);
             const quantityInCart = cartItem ? cartItem.quantity : 0;
+            const stock = (product as any).stock ?? 999;
             const atMax = quantityInCart >= stock;
+            
+            const displayPrice = cartItem ? cartItem.unit_price : product.Price;
+            const displayMRP = cartItem ? (cartItem.unit_price > product.MRP ? cartItem.unit_price : product.MRP) : product.MRP;
+            const hasDiscount = displayMRP > displayPrice;
+            const discountPct = hasDiscount ? Math.round(((displayMRP - displayPrice) / displayMRP) * 100) : 0;
+            const isOutOfStock = stock === 0 || localOutOfStock.has(product._id);
+            const isLowStock = stock > 0 && stock <= 5;
+            const recItem = recommendationItems.find((r) => r.product_id === product._id);
 
             return (
               <div
@@ -123,7 +141,7 @@ export const TaskShoppingPage: React.FC = () => {
                     />
                     {hasDiscount && !isOutOfStock && (
                       <span className="absolute top-1.5 left-1.5 bg-[#cc0c39] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
-                        {Math.round(((product.MRP - product.Price) / product.MRP) * 100)}% Off
+                        {discountPct}% Off
                       </span>
                     )}
                     {isOutOfStock && (
@@ -134,6 +152,11 @@ export const TaskShoppingPage: React.FC = () => {
                     {isLowStock && !isOutOfStock && (
                       <span className="absolute top-1.5 right-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
                         Only {stock} left
+                      </span>
+                    )}
+                    {recItem && !isOutOfStock && (
+                      <span className="absolute bottom-1.5 left-1.5 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5">
+                        ⟳ Buy Again
                       </span>
                     )}
                   </div>
@@ -163,9 +186,9 @@ export const TaskShoppingPage: React.FC = () => {
                 <div className="mt-2 flex flex-col gap-3">
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-1.5 flex-wrap">
-                      <span className="text-lg font-bold text-gray-900">₹{product.Price}</span>
+                      <span className="text-lg font-bold text-gray-900">₹{displayPrice}</span>
                       {hasDiscount && (
-                        <span className="text-xs text-gray-400 line-through">₹{product.MRP}</span>
+                        <span className="text-xs text-gray-400 line-through">₹{displayMRP}</span>
                       )}
                     </div>
                   </div>
@@ -173,10 +196,13 @@ export const TaskShoppingPage: React.FC = () => {
                   {/* Direct Add to Cart Button or Quantity Selector */}
                   {isOutOfStock ? (
                     <button
-                      disabled
-                      className="w-full bg-gray-200 text-gray-500 py-1.5 rounded-full text-xs font-semibold border border-gray-300 cursor-not-allowed"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/product/${product._id}`);
+                      }}
+                      className="w-full bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold border border-gray-300 transition cursor-pointer"
                     >
-                      Out of Stock
+                      See Similar Product
                     </button>
                   ) : quantityInCart > 0 ? (
                     <div className="flex items-center justify-between w-full h-[28px] border border-gray-300 rounded-full overflow-hidden select-none bg-gray-50">
@@ -199,11 +225,23 @@ export const TaskShoppingPage: React.FC = () => {
                         {quantityInCart}
                       </span>
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           if (!atMax) {
                             dispatch(optimisticUpdateQty({ product_id: product._id, quantity: quantityInCart + 1 }));
-                            dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart + 1 }));
+                            try {
+                              await dispatch(updateItemQty({ product_id: product._id, quantity: quantityInCart + 1 })).unwrap();
+                            } catch (error: any) {
+                              const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                              if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                                setStockErrorPopup(product._id);
+                                setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                                dispatch(fetchCart());
+                              } else {
+                                alert(error || "Failed to update cart");
+                                dispatch(fetchCart());
+                              }
+                            }
                           }
                         }}
                         disabled={atMax}
@@ -214,13 +252,25 @@ export const TaskShoppingPage: React.FC = () => {
                     </div>
                   ) : (
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
                         if (!isAuthenticated) {
                           navigate("/auth");
                         } else {
                           dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
-                          dispatch(addItemToCart({ product_id: product._id, quantity: 1 }));
+                          try {
+                            await dispatch(addItemToCart({ product_id: product._id, quantity: 1 })).unwrap();
+                          } catch (error: any) {
+                            const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                            if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                              setStockErrorPopup(product._id);
+                              setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                              dispatch(fetchCart());
+                            } else {
+                              alert(error || "Failed to add to cart");
+                              dispatch(fetchCart());
+                            }
+                          }
                         }
                       }}
                       className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#f0b800] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold cursor-pointer border border-[#f5c200] transition active:scale-[0.97]"
@@ -232,6 +282,37 @@ export const TaskShoppingPage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Out of Stock Popup */}
+      {stockErrorPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col items-center text-center gap-4 animate-in zoom-in-95">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-2">
+              <span className="text-2xl font-bold">!</span>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">Out of Stock</h3>
+            <p className="text-sm text-gray-600">
+              We're sorry, but this product just went out of stock.
+            </p>
+            <div className="flex flex-col gap-2 w-full mt-2">
+              <button
+                onClick={() => {
+                  navigate(`/product/${stockErrorPopup}`);
+                  setStockErrorPopup(null);
+                }}
+                className="w-full py-2.5 bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] font-semibold rounded-full border border-[#f5c200] transition cursor-pointer"
+              >
+                See Similar Products
+              </button>
+              <button
+                onClick={() => setStockErrorPopup(null)}
+                className="w-full py-2.5 bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] font-semibold rounded-full border border-gray-300 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

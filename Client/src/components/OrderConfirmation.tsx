@@ -1,12 +1,14 @@
 import { useEffect, useState, type FC } from "react";
-import { useSelector } from "react-redux";
-import { type RootState } from "../app/store";
+import { useSelector, useDispatch } from "react-redux";
+import { type RootState, type AppDispatch } from "../app/store";
+import { fetchRecommendations } from "../features/recommendations/recommendationSlice";
 import { type Product } from "./ProductPage";
 import { CheckCircle, Package, Loader2, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export const OrderConfirmation: FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
   const { lastOrder, loading } = useSelector((state: RootState) => state.order);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
   const [productDetails, setProductDetails] = useState<Record<string, Product>>({});
@@ -43,7 +45,15 @@ export const OrderConfirmation: FC = () => {
     };
 
     fetchDetails();
-  }, [lastOrder, productDetails, apiBaseUrl]);
+
+    // Fetch fresh recommendations to reflect the newly placed order
+    // We do this here (with a slight delay) to ensure background workers have updated Redis
+    const timer = setTimeout(() => {
+      dispatch(fetchRecommendations());
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [lastOrder, productDetails, apiBaseUrl, dispatch]);
 
   if (!isAuthenticated) {
     return (

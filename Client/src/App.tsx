@@ -29,7 +29,7 @@ interface PaginationMeta {
 
 interface ProductDetailWrapperProps {
   apiBaseUrl: string;
-  onAddToCart: (product_id: string, qty: number) => void;
+  onAddToCart: (product_id: string, qty: number) => Promise<void>;
 }
 
 const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperProps) => {
@@ -43,27 +43,28 @@ const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperP
   const cartItem = cartItems.find((item) => item.product_id === id);
   const initialQty = cartItem ? cartItem.quantity : 1;
 
-  useEffect(() => {
+  const fetchProductDetail = async (isRefresh = false) => {
     if (!id) return;
-    const fetchProductDetail = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${apiBaseUrl}/products/${id}`);
-        if (!res.ok) throw new Error("Product not found");
-        const json = await res.json();
-        if (json.success && json.data) {
-          setProduct(json.data);
-        } else {
-          throw new Error("Failed to load product details");
-        }
-      } catch (err: any) {
-        console.error("Error loading product detail:", err);
-        setError(err.message || "Something went wrong");
-      } finally {
-        setLoading(false);
+    if (!isRefresh) setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiBaseUrl}/products/${id}`);
+      if (!res.ok) throw new Error("Product not found");
+      const json = await res.json();
+      if (json.success && json.data) {
+        setProduct(json.data);
+      } else {
+        throw new Error("Failed to load product details");
       }
-    };
+    } catch (err: any) {
+      console.error("Error loading product detail:", err);
+      setError(err.message || "Something went wrong");
+    } finally {
+      if (!isRefresh) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchProductDetail();
   }, [id, apiBaseUrl]);
 
@@ -95,6 +96,7 @@ const ProductDetailWrapper = ({ apiBaseUrl, onAddToCart }: ProductDetailWrapperP
       product={product}
       onBack={() => navigate("/")}
       onAddToCart={(qty) => onAddToCart(product._id, qty)}
+      onRefresh={() => fetchProductDetail(true)}
       initialQty={initialQty}
     />
   );
@@ -128,7 +130,7 @@ function App() {
   }, [isAuthenticated, dispatch]);
 
   // Fetch recommendations for product ordering
-  const recommendationItems = useSelector((state: RootState) => state.recommendations.items);
+  const recommendationItems = useSelector((state: RootState) => state.recommendations?.items || []);
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(fetchRecommendations());
@@ -140,6 +142,8 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [stockErrorPopup, setStockErrorPopup] = useState<string | null>(null);
+  const [localOutOfStock, setLocalOutOfStock] = useState<Set<string>>(new Set());
 
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
@@ -175,7 +179,7 @@ function App() {
 
   // Feature 4: Re-sort products when recommendations load
   const sortedProducts = (() => {
-    if (!isAuthenticated || recommendationItems.length === 0) return products;
+    if (!isAuthenticated || !recommendationItems || recommendationItems.length === 0) return products;
     const scoreMap = new Map<string, number>();
     recommendationItems.forEach((rec) => scoreMap.set(rec.product_id, rec.score));
     return [...products].sort((a, b) => (scoreMap.get(b._id) || 0) - (scoreMap.get(a._id) || 0));
@@ -253,7 +257,7 @@ function App() {
                               const ratingData = getRandomRating(product._id);
                               const hasDiscount = product.MRP > product.Price;
                               const stock = (product as any).stock ?? 999;
-                              const isOutOfStock = stock === 0;
+                              const isOutOfStock = stock === 0 || localOutOfStock.has(product._id);
                               const isLowStock = stock > 0 && stock <= 5;
                               const recItem = recommendationItems.find((r) => r.product_id === product._id);
                               return (
@@ -329,10 +333,13 @@ function App() {
                                        if (isOutOfStock) {
                                          return (
                                            <button
-                                             disabled
-                                             className="w-full bg-gray-200 text-gray-500 py-1.5 rounded-full text-xs font-semibold border border-gray-300 cursor-not-allowed"
+                                             onClick={(e) => {
+                                               e.stopPropagation();
+                                               navigate(`/product/${product._id}`, { state: { scrollToSimilar: true } });
+                                             }}
+                                             className="w-full bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold border border-gray-300 transition cursor-pointer"
                                            >
-                                             Out of Stock
+                                             See Similar Product
                                            </button>
                                          );
                                        }
@@ -360,11 +367,23 @@ function App() {
                                                {cartItem.quantity}
                                              </span>
                                              <button
-                                               onClick={(e) => {
+                                               onClick={async (e) => {
                                                  e.stopPropagation();
                                                  if (!atMax) {
                                                    dispatch(optimisticUpdateQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
-                                                   dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                                                   try {
+                                                     await dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 })).unwrap();
+                                                   } catch (error: any) {
+                                                     const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                                                     if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                                                       setStockErrorPopup(product._id);
+                                                       setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                                                       dispatch(fetchCart());
+                                                     } else {
+                                                       alert(error || "Failed to update cart");
+                                                       dispatch(fetchCart());
+                                                     }
+                                                   }
                                                  }
                                                }}
                                                disabled={atMax}
@@ -377,13 +396,25 @@ function App() {
                                        }
                                        return (
                                          <button
-                                           onClick={(e) => {
+                                           onClick={async (e) => {
                                              e.stopPropagation();
                                              if (!isAuthenticated) {
                                                navigate("/auth");
                                              } else {
                                                dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
-                                               dispatch(addItemToCart({ product_id: product._id, quantity: 1 }));
+                                               try {
+                                                 await dispatch(addItemToCart({ product_id: product._id, quantity: 1 })).unwrap();
+                                               } catch (error: any) {
+                                                 const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                                                 if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                                                   setStockErrorPopup(product._id);
+                                                   setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                                                   dispatch(fetchCart());
+                                                 } else {
+                                                   alert(error || "Failed to add to cart");
+                                                   dispatch(fetchCart());
+                                                 }
+                                               }
                                              }
                                            }}
                                            className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#f0b800] text-[#0f1111] py-1.5 rounded-full text-xs font-semibold cursor-pointer border border-[#f5c200] transition active:scale-[0.97]"
@@ -423,6 +454,38 @@ function App() {
                         </div>
                       )}
                     </main>
+
+                    {/* Out of Stock Popup for Homepage Grid */}
+                    {stockErrorPopup && (
+                      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col items-center text-center gap-4 animate-in zoom-in-95">
+                          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-2">
+                            <span className="text-2xl font-bold">!</span>
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900">Out of Stock</h3>
+                          <p className="text-sm text-gray-600">
+                            We're sorry, but this product just went out of stock. 
+                          </p>
+                          <div className="flex flex-col gap-2 w-full mt-2">
+                            <button
+                              onClick={() => {
+                                navigate(`/product/${stockErrorPopup}`, { state: { scrollToSimilar: true } });
+                                setStockErrorPopup(null);
+                              }}
+                              className="w-full py-2.5 bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] font-semibold rounded-full border border-[#f5c200] transition cursor-pointer"
+                            >
+                              See Similar Products
+                            </button>
+                            <button
+                              onClick={() => setStockErrorPopup(null)}
+                              className="w-full py-2.5 bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] font-semibold rounded-full border border-gray-300 transition cursor-pointer"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 }
               />
@@ -445,12 +508,12 @@ function App() {
                 element={
                   <ProductDetailWrapper 
                     apiBaseUrl={apiBaseUrl}
-                    onAddToCart={(product_id, qty) => {
+                    onAddToCart={async (product_id, qty) => {
                       if (!isAuthenticated) {
                         navigate("/auth");
                       } else {
                         // Use updateItemQty to SET exact quantity (not increment)
-                        dispatch(updateItemQty({ product_id, quantity: qty }));
+                        await dispatch(updateItemQty({ product_id, quantity: qty })).unwrap();
                       }
                     }}
                   />

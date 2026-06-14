@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
 import { placeOrder } from "../features/order/orderSlice";
 import { fetchCart } from "../features/cart/cartSlice";
+import { fetchRecommendations } from "../features/recommendations/recommendationSlice";
 import { type Product } from "./ProductPage";
 import { Loader2, ShieldCheck, MapPin, CreditCard, Truck, ChevronLeft } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -119,6 +120,10 @@ export const CheckoutPage: FC = () => {
       const result = await dispatch(placeOrder(orderPayload)).unwrap();
       if (result) {
         dispatch(fetchCart());
+        // Delay fetching recommendations to give background workers time to update Redis
+        setTimeout(() => {
+          dispatch(fetchRecommendations());
+        }, 1500);
         navigate("/order-confirmation");
       }
     } catch (err) {

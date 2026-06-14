@@ -1,18 +1,123 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
-	"time"
-
+	"os"
 	"server/database"
 	"server/models"
 	"server/services"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
+
+// SeedMLEngine queries all products from MongoDB, builds the payload, and sends it to FastAPI /seed.
+func SeedMLEngine(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Seeding 38k+ products can take some time to fetch and process in Go (though Go handles it very quickly).
+		// We set a 2 minute timeout for safety.
+		var ctx, cancel = context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		productCollection := database.OpenCollection("Products", client)
+
+		cursor, err := productCollection.Find(ctx, bson.M{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query products from MongoDB"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var mongoProducts []models.Product
+		if err := cursor.All(ctx, &mongoProducts); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse products list"})
+			return
+		}
+
+		type MongoOid struct {
+			Oid string `json:"$oid"`
+		}
+		type FastAPIProductPayload struct {
+			IDObj       MongoOid `json:"_id"`
+			Brand       string   `json:"Brand"`
+			Product     string   `json:"Product"`
+			Quantity    string   `json:"Quantity"`
+			Price       float64  `json:"Price"`
+			MRP         float64  `json:"MRP"`
+			Category    string   `json:"Category"`
+			SubCategory string   `json:"Sub-Category"`
+			ImageSmall  string   `json:"image_small"`
+			IDNum       int      `json:"id"`
+		}
+
+		payload := make([]FastAPIProductPayload, len(mongoProducts))
+		for i, p := range mongoProducts {
+			payload[i] = FastAPIProductPayload{
+				IDObj: MongoOid{
+					Oid: p.ID.Hex(),
+				},
+				Brand:       p.Brand,
+				Product:     p.Name,
+				Quantity:    p.Quantity,
+				Price:       p.Price,
+				MRP:         p.MRP,
+				Category:    p.Category,
+				SubCategory: p.SubCategory,
+				ImageSmall:  p.ImageURL,
+				IDNum:       p.IDNum,
+			}
+		}
+
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal payload for ML Engine"})
+			return
+		}
+
+		mlEngineURL := os.Getenv("ML_ENGINE_URL")
+		if mlEngineURL == "" {
+			mlEngineURL = "http://localhost:8000"
+		}
+		seedURL := mlEngineURL + "/seed"
+
+		// Call the FastAPI /seed endpoint. Since it executes as a background task,
+		// the HTTP call completes quickly.
+		resp, err := http.Post(seedURL, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to call ML Engine /seed API: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response from ML Engine"})
+			return
+		}
+
+		var statusJSON interface{}
+		if err := json.Unmarshal(bodyBytes, &statusJSON); err != nil {
+			c.JSON(resp.StatusCode, gin.H{
+				"success":             resp.StatusCode >= 200 && resp.StatusCode < 300,
+				"ml_engine_raw":       string(bodyBytes),
+				"ml_engine_status_ok": resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK,
+			})
+			return
+		}
+
+		c.JSON(resp.StatusCode, gin.H{
+			"success":             resp.StatusCode >= 200 && resp.StatusCode < 300,
+			"ml_engine_response":  statusJSON,
+			"ml_engine_status_ok": resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK,
+		})
+	}
+}
 
 // UpdateProductPrice updates a product's price and publishes a price.changed event
 func UpdateProductPrice(client *mongo.Client) gin.HandlerFunc {

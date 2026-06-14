@@ -1,5 +1,5 @@
 import { useState, useEffect, type FC } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
 import { addItemToCart, optimisticAddItem } from "../features/cart/cartSlice";
@@ -25,10 +25,11 @@ export interface Product {
   id?: number;
 }
 
-interface ProductPageProps {
+export interface ProductPageProps {
   product: Product;
   onBack: () => void;
-  onAddToCart: (qty: number) => void;
+  onAddToCart: (qty: number) => Promise<void> | void;
+  onRefresh?: () => void;
   initialQty?: number;
 }
 
@@ -36,9 +37,11 @@ export const ProductPage: FC<ProductPageProps> = ({
   product, 
   onBack, 
   onAddToCart,
+  onRefresh,
   initialQty = 1
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch<AppDispatch>();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
 
@@ -46,6 +49,18 @@ export const ProductPage: FC<ProductPageProps> = ({
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [product._id]);
+
+  // Auto-scroll logic if navigated from a "See Similar Products" button on a card
+  useEffect(() => {
+    if ((location.state as any)?.scrollToSimilar) {
+      const timer = setTimeout(() => {
+        document.getElementById('similar-products-section')?.scrollIntoView({ behavior: 'smooth' });
+        // Clear state to avoid scrolling again on re-renders
+        navigate(location.pathname, { replace: true, state: {} });
+      }, 500); // Wait for the section to render
+      return () => clearTimeout(timer);
+    }
+  }, [location.state, location.pathname, navigate]);
 
   interface SubstituteProduct {
     _id?: { $oid: string };
@@ -133,8 +148,20 @@ export const ProductPage: FC<ProductPageProps> = ({
     }
   };
 
-  const handleAddToCartClick = () => {
-    onAddToCart(selectedQty);
+  const [stockErrorPopup, setStockErrorPopup] = useState(false);
+
+  const handleAddToCartClick = async () => {
+    try {
+      await onAddToCart(selectedQty);
+    } catch (error: any) {
+      const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+      if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+        setStockErrorPopup(true);
+        if (onRefresh) onRefresh();
+      } else {
+        alert(error || "Failed to add to cart");
+      }
+    }
   };
 
   // Helper to generate stars and count dynamically for catalog looks
@@ -145,8 +172,13 @@ export const ProductPage: FC<ProductPageProps> = ({
     return { rating: rating.toFixed(1), reviews };
   };
 
-  const hasDiscount = product.MRP > product.Price;
-  const discountPct = hasDiscount ? Math.round(((product.MRP - product.Price) / product.MRP) * 100) : 0;
+  const cartItems = useSelector((state: RootState) => state.cart.cart?.items || []);
+  const cartItem = cartItems.find((item) => item.product_id === product._id);
+  
+  const displayPrice = cartItem ? cartItem.unit_price : product.Price;
+  const displayMRP = cartItem ? (cartItem.unit_price > product.MRP ? cartItem.unit_price : product.MRP) : product.MRP;
+  const hasDiscount = displayMRP > displayPrice;
+  const discountPct = hasDiscount ? Math.round(((displayMRP - displayPrice) / displayMRP) * 100) : 0;
 
   return (
     <div className="w-full max-w-[1500px] mx-auto flex flex-col gap-6 flex-1 px-4 md:px-0">
@@ -172,12 +204,22 @@ export const ProductPage: FC<ProductPageProps> = ({
         </div>
 
         {/* Left Col: Product Image */}
-        <div className="col-span-12 md:col-span-6 lg:col-span-5 flex items-center justify-center border border-gray-100 rounded-sm p-8 bg-white h-[350px] md:h-[450px]">
+        <div className="col-span-12 md:col-span-6 lg:col-span-5 flex flex-col items-center justify-center border border-gray-100 rounded-sm p-8 bg-white h-[350px] md:h-[450px]">
           <img
             src={product.image_small}
             alt={product.Product}
-            className="max-h-full max-w-full object-contain transition duration-200"
+            className={`max-h-full max-w-full object-contain transition duration-200 ${product.stock === 0 ? "grayscale opacity-75 mb-4" : ""}`}
           />
+          {product.stock === 0 && (
+            <button
+              onClick={() => {
+                document.getElementById('similar-products-section')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="px-6 py-2 bg-[#f0f2f2] border border-gray-300 rounded-full text-sm font-semibold hover:bg-[#e3e6e6] transition text-[#0f1111]"
+            >
+              See Similar Products
+            </button>
+          )}
         </div>
 
         {/* Center Col: Title, Pricing, & Badges */}
@@ -210,11 +252,11 @@ export const ProductPage: FC<ProductPageProps> = ({
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline gap-1">
               <span className="text-2xl font-light text-[#0f1111]">₹</span>
-              <span className="text-3xl font-medium text-[#0f1111]">{product.Price}</span>
+              <span className="text-3xl font-medium text-[#0f1111]">{displayPrice}</span>
               {hasDiscount && (
                 <>
                   <span className="text-sm text-gray-500 line-through ml-2">
-                    MRP: ₹{product.MRP}
+                    MRP: ₹{displayMRP}
                   </span>
                   <span className="text-sm text-green-700 font-bold ml-2">
                     ({discountPct}% Off)
@@ -340,7 +382,7 @@ export const ProductPage: FC<ProductPageProps> = ({
 
       {/* Similar Products & Substitutes Section */}
       {(loadingSubs || substitutes.length > 0) && (
-        <section className="bg-white p-6 rounded-sm shadow-sm border border-gray-200 mb-8 animate-in fade-in duration-300">
+        <section id="similar-products-section" className="bg-white p-6 rounded-sm shadow-sm border border-gray-200 mb-8 animate-in fade-in duration-300">
           <div className="border-b border-gray-100 pb-3 mb-5">
             <h2 className="text-lg md:text-xl font-bold text-[#0f1111] flex items-center gap-2">
               ✨ Similar Products & Smart Alternatives
@@ -386,9 +428,6 @@ export const ProductPage: FC<ProductPageProps> = ({
                           alt={sub.name}
                           className="max-h-full max-w-full object-contain group-hover:scale-[1.03] transition duration-200 select-none"
                         />
-                        <span className={`absolute top-1.5 left-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-sm text-white ${isMatchHigh ? "bg-green-600" : "bg-blue-600"}`}>
-                          {sub.match_score}% Match
-                        </span>
                       </div>
 
                       {/* Brand & Name */}
@@ -430,6 +469,38 @@ export const ProductPage: FC<ProductPageProps> = ({
           )}
         </section>
       )}
+      {/* Out of Stock Popup */}
+      {stockErrorPopup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col items-center text-center gap-4 animate-in zoom-in-95">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-2">
+              <span className="text-2xl font-bold">!</span>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">Out of Stock</h3>
+            <p className="text-sm text-gray-600">
+              We're sorry, but this product just went out of stock. 
+            </p>
+            <div className="flex flex-col gap-2 w-full mt-2">
+              <button
+                onClick={() => {
+                  setStockErrorPopup(false);
+                  document.getElementById('similar-products-section')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="w-full py-2.5 bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] font-semibold rounded-full border border-[#f5c200] transition"
+              >
+                See Similar Products
+              </button>
+              <button
+                onClick={() => setStockErrorPopup(false)}
+                className="w-full py-2.5 bg-[#f0f2f2] hover:bg-[#e3e6e6] text-[#0f1111] font-semibold rounded-full border border-gray-300 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
