@@ -24,10 +24,11 @@ type Product struct {
 	Quantity    string        `json:"Quantity" bson:"quantity" validate:"required"`
 	Price       float64       `json:"Price" bson:"price" validate:"required,gt=0"`
 	MRP         float64       `json:"MRP" bson:"mrp" validate:"required,gtefield=Price"`
-	Category    string        `json:"Category,omitempty" bson:"category_name,omitempty"`
-	SubCategory string        `json:"Sub-Category,omitempty" bson:"sub_category_name,omitempty"`
+	Category    string        `json:"Category,omitempty" bson:"Category,omitempty"`
+	SubCategory string        `json:"Sub-Category,omitempty" bson:"Sub-Category,omitempty"`
 	ImageURL    string        `json:"image_small" bson:"image_small" validate:"required,url"`
 	Stock       int           `json:"stock" bson:"stock"`
+	IDNum       int           `json:"id,omitempty" bson:"id,omitempty"`
 }
 type OrderItem struct {
 	ProductID  bson.ObjectID `json:"product_id" bson:"product_id" validate:"required"`

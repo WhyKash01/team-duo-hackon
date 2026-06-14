@@ -41,3 +41,8 @@ lerna-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# ML Engine / Python
+ml_engine/venv/
+ml_engine/__pycache__/
+ml_engine/*.pyc

@@ -21,14 +21,16 @@ func SetupRouter() *gin.Engine {
 		api.POST("/register", controllers.RegisterUser(client))
 		api.POST("/login", controllers.LoginUser(client))
 		api.POST("/refresh", controllers.RefreshTokenHandler(client))
-		
+
 		// Product catalog routes
 		api.GET("/products", controllers.GetProducts(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
+		api.GET("/products/:id/substitutes", controllers.GetProductSubstitutes(client))
 
 		// Admin routes (unprotected for demo purposes)
 		api.POST("/admin/update-price", controllers.UpdateProductPrice(client))
 		api.POST("/admin/update-stock", controllers.UpdateProductStock(client))
+		api.POST("/admin/seed-ml", controllers.SeedMLEngine(client))
 	}
 
 	// Protected Routes (requires AuthMiddleware)
@@ -36,7 +38,7 @@ func SetupRouter() *gin.Engine {
 	protected.Use(middleware.AuthMiddleware())
 	{
 		protected.POST("/logout", controllers.LogoutHandler(client))
-		
+
 		// Cart management endpoints
 		protected.GET("/cart", controllers.GetCart(client))
 		protected.POST("/cart/add", controllers.AddToCart(client))
