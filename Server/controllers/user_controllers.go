@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"server/database"
 	"server/models"
 	"server/utils"
@@ -118,21 +119,25 @@ func LoginUser(client *mongo.Client) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update tokens"})
 			return
 		}
+		domain := os.Getenv("DOMAIN")
+		if domain == "" {
+			domain = "localhost"
+		}
 		http.SetCookie(c.Writer, &http.Cookie{
-			Name:  "access_token",
-			Value: token,
-			Path:  "/",
-			// Domain:   "localhost",
+			Name:     "access_token",
+			Value:    token,
+			Path:     "/",
+			Domain:   domain,
 			MaxAge:   86400,
 			Secure:   true,
 			HttpOnly: true,
 			SameSite: http.SameSiteNoneMode,
 		})
 		http.SetCookie(c.Writer, &http.Cookie{
-			Name:  "refresh_token",
-			Value: refreshToken,
-			Path:  "/",
-			// Domain:   "localhost",
+			Name:     "refresh_token",
+			Value:    refreshToken,
+			Path:     "/",
+			Domain:   domain,
 			MaxAge:   604800,
 			Secure:   true,
 			HttpOnly: true,
@@ -184,11 +189,15 @@ func LogoutHandler(client *mongo.Client) gin.HandlerFunc {
 		// 	true,        // Use true in production with HTTPS
 		// 	true,        // HttpOnly
 		// )
+		domain := os.Getenv("DOMAIN")
+		if domain == "" {
+			domain = "localhost"
+		}
 		http.SetCookie(c.Writer, &http.Cookie{
-			Name:  "access_token",
-			Value: "",
-			Path:  "/",
-			// Domain:   "localhost",
+			Name:     "access_token",
+			Value:    "",
+			Path:     "/",
+			Domain:   domain,
 			MaxAge:   -1,
 			Secure:   true,
 			HttpOnly: true,
@@ -209,6 +218,7 @@ func LogoutHandler(client *mongo.Client) gin.HandlerFunc {
 			Name:     "refresh_token",
 			Value:    "",
 			Path:     "/",
+			Domain:   domain,
 			MaxAge:   -1,
 			Secure:   true,
 			HttpOnly: true,
@@ -256,8 +266,12 @@ func RefreshTokenHandler(client *mongo.Client) gin.HandlerFunc {
 			return
 		}
 
-		c.SetCookie("access_token", newToken, 86400, "/", "localhost", true, true)          // expires in 24 hours
-		c.SetCookie("refresh_token", newRefreshToken, 604800, "/", "localhost", true, true) //expires in 1 week
+		domain := os.Getenv("DOMAIN")
+		if domain == "" {
+			domain = "localhost"
+		}
+		c.SetCookie("access_token", newToken, 86400, "/", domain, true, true)          // expires in 24 hours
+		c.SetCookie("refresh_token", newRefreshToken, 604800, "/", domain, true, true) //expires in 1 week
 
 		c.JSON(http.StatusOK, gin.H{"message": "Tokens refreshed"})
 	}

@@ -1,0 +1,3 @@
+-- DROP TABLE IF EXISTS products;
+
+DROP EXTENSION IF EXISTS vector;
