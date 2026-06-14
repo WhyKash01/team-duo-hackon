@@ -11,6 +11,7 @@ interface HeaderProps {
   onLogoClick?: () => void;
   onCartClick?: () => void;
   onReorderClick?: () => void;
+  onSearch?: (query: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -19,11 +20,25 @@ export const Header: React.FC<HeaderProps> = ({
   onRegisterClick,
   onLogoClick,
   onCartClick,
-  onReorderClick
+  onReorderClick,
+  onSearch
 }) => {
   const dispatch = useDispatch();
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
   const [searchCategory, setSearchCategory] = useState("All");
+  const [searchInput, setSearchInput] = useState("");
+
+  const handleSearch = () => {
+    if (onSearch) {
+      onSearch(searchInput);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
 
   const handleLogout = async () => {
     if (!user) return;
@@ -97,11 +112,17 @@ export const Header: React.FC<HeaderProps> = ({
         <input
           type="text"
           placeholder="Search Amazon.in"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           className="flex-1 px-3 py-2 text-sm text-black outline-none w-full"
         />
 
         {/* Search Button */}
-        <button className="bg-[#febd69] hover:bg-[#f3a847] text-[#131921] p-2 px-6 flex items-center justify-center cursor-pointer transition">
+        <button 
+          onClick={handleSearch}
+          className="bg-[#febd69] hover:bg-[#f3a847] text-[#131921] p-2 px-6 flex items-center justify-center cursor-pointer transition"
+        >
           <Search size={20} />
         </button>
       </div>

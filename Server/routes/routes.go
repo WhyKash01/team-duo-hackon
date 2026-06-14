@@ -24,6 +24,7 @@ func SetupRouter() *gin.Engine {
 
 		// Product catalog routes
 		api.GET("/products", controllers.GetProducts(client))
+		api.GET("/search", controllers.SearchProducts(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
 		api.GET("/products/:id/substitutes", controllers.GetProductSubstitutes(client))
 

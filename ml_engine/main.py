@@ -238,3 +238,36 @@ def find_substitute(req: ProductPayload):
 
     results.sort(key=lambda x: x.match_score, reverse=True)
     return results[:10]
+
+class SearchQuery(BaseModel):
+    query: str
+
+@app.post("/search", response_model=list[SubstituteResult])
+def search_products(req: SearchQuery):
+    embedding = model.encode(req.query).tolist()
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT id, name, brand, category, price, 1 - (embedding <=> %s::vector) AS semantic_sim
+        FROM products 
+        ORDER BY embedding <=> %s::vector ASC
+        LIMIT 20;
+    """, (embedding, embedding))
+    
+    candidates = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    results = []
+    for row in candidates:
+        c_id, c_name, c_brand, c_category, c_price, semantic_sim = row
+        results.append(SubstituteResult(
+            id=c_id,
+            id_obj={"$oid": c_id},
+            name=c_name, brand=c_brand, category=c_category, price=float(c_price), 
+            match_score=round(semantic_sim * 100, 2)
+        ))
+
+    return results

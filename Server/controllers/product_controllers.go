@@ -311,3 +311,91 @@ func SeedMLEngine(client *mongo.Client) gin.HandlerFunc {
 		})
 	}
 }
+
+// SearchProducts calls the ML engine /search endpoint to perform vector search.
+func SearchProducts(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		query := c.Query("q")
+		if query == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Search query 'q' is required"})
+			return
+		}
+
+		type SearchQuery struct {
+			Query string `json:"query"`
+		}
+
+		payload := SearchQuery{
+			Query: query,
+		}
+
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal payload for ML Engine"})
+			return
+		}
+
+		mlEngineURL := os.Getenv("ML_ENGINE_URL")
+		if mlEngineURL == "" {
+			mlEngineURL = "http://localhost:8000"
+		}
+		searchURL := mlEngineURL + "/search"
+
+		resp, err := http.Post(searchURL, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to call ML Engine /search: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response from ML Engine"})
+			return
+		}
+
+		var searchResults []interface{}
+		if err := json.Unmarshal(bodyBytes, &searchResults); err != nil {
+			c.JSON(resp.StatusCode, gin.H{
+				"success":       resp.StatusCode >= 200 && resp.StatusCode < 300,
+				"ml_engine_raw": string(bodyBytes),
+			})
+			return
+		}
+
+		// Also try to find exact matches from mongo for top results? Or just return the semantic matches?
+		// We'll just return the vector semantic matches, but let's query Mongo to get the full product details.
+		
+		var fullProducts []models.Product
+		productCollection := database.OpenCollection("Products", client)
+		
+		for _, rawItem := range searchResults {
+			itemMap, ok := rawItem.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			idStr, ok := itemMap["id"].(string)
+			if !ok {
+				continue
+			}
+			objID, err := bson.ObjectIDFromHex(idStr)
+			if err != nil {
+				continue
+			}
+			var product models.Product
+			err = productCollection.FindOne(ctx, bson.M{"_id": objID}).Decode(&product)
+			if err == nil {
+				// We can embed the match_score if needed, but for now we'll just return the full products
+				fullProducts = append(fullProducts, product)
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    fullProducts,
+		})
+	}
+}

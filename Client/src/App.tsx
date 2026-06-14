@@ -15,6 +15,7 @@ import { CheckoutPage } from "./components/CheckoutPage";
 import { OrderConfirmation } from "./components/OrderConfirmation";
 import { OrdersPage } from "./components/OrdersPage";
 import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
+import { SearchPage } from "./components/SearchPage";
 import { Star, Loader2 } from "lucide-react";
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from "react-router-dom";
 
@@ -206,6 +207,13 @@ function App() {
               onLogoClick={() => navigate("/")}
               onCartClick={() => navigate("/cart")}
               onReorderClick={() => navigate("/orders")}
+              onSearch={(query) => {
+                 if (query.trim()) {
+                   navigate(`/search?q=${encodeURIComponent(query)}`);
+                 } else {
+                   navigate("/");
+                 }
+              }}
             />
 
             {/* Sub-Header links bar */}
@@ -416,6 +424,12 @@ function App() {
                     </main>
                   </>
                 }
+              />
+
+              {/* Search Results Route */}
+              <Route
+                path="/search"
+                element={<SearchPage />}
               />
 
               {/* Product Page Detail Route */}
