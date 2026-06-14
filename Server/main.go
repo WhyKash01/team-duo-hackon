@@ -4,12 +4,27 @@ import (
 	"log"
 
 	"server/config"
+	"server/database"
 	"server/routes"
+	"server/services"
 )
 
 func main() {
 	// Load environment configuration
 	cfg := config.LoadConfig()
+
+	// Initialize Redis
+	services.InitRedis()
+
+	// Initialize RabbitMQ
+	services.InitRabbitMQ()
+
+	// Hydrate inventory from MongoDB into Redis
+	services.HydrateInventory(database.Client)
+
+	// Start background consumers
+	services.StartCartStabilityConsumer(database.Client)
+	services.StartReplenishmentConsumer()
 
 	// Set up the router
 	r := routes.SetupRouter()

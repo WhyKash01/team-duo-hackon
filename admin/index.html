@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Demo Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #eee; padding: 2rem; }
+    h1 { color: #e77600; margin-bottom: 1rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 900px; }
+    .card { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 1.5rem; }
+    .card h2 { color: #febd69; margin-bottom: 0.75rem; font-size: 1rem; }
+    label { display: block; font-size: 0.75rem; color: #aaa; margin-bottom: 0.25rem; margin-top: 0.75rem; }
+    select, input { width: 100%; padding: 0.5rem; border: 1px solid #333; border-radius: 4px; background: #0f3460; color: #fff; font-size: 0.85rem; }
+    button { margin-top: 1rem; width: 100%; padding: 0.6rem; background: #e77600; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #f08804; }
+    .log { background: #0a0a1a; border: 1px solid #333; border-radius: 4px; padding: 1rem; margin-top: 1.5rem; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #4ade80; max-width: 900px; }
+    .log div { padding: 0.2rem 0; border-bottom: 1px solid #1a1a2e; }
+    .msg { margin-top: 0.5rem; font-size: 0.75rem; color: #4ade80; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>⚡ Admin Demo Panel (separate from main app)</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>💰 Update Price</h2>
+      <label>Product</label>
+      <select id="priceProduct"></select>
+      <label>New Price (₹)</label>
+      <input id="newPrice" type="number" placeholder="e.g. 65">
+      <button onclick="updatePrice()">Publish Price Change</button>
+      <div id="priceMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <h2>📦 Update Stock</h2>
+      <label>Product</label>
+      <select id="stockProduct"></select>
+      <label>New Stock Count</label>
+      <input id="newStock" type="number" placeholder="e.g. 2 or 0" min="0">
+      <button onclick="updateStock()">Publish Stock Change</button>
+      <div id="stockMsg" class="msg"></div>
+    </div>
+  </div>
+  <div class="log" id="eventLog"><div style="color:#888">Event log will appear here...</div></div>
+
+  <script>
+    const API = "http://localhost:8080/api";
+    const log = [];
+
+    async function loadProducts() {
+      const res = await fetch(`${API}/products?limit=50`);
+      const json = await res.json();
+      if (!json.success) return;
+      const products = json.data;
+      const priceSelect = document.getElementById("priceProduct");
+      const stockSelect = document.getElementById("stockProduct");
+      products.forEach(p => {
+        const opt1 = new Option(`${p.Product} (₹${p.Price}, stock:${p.stock ?? '?'})`, p._id);
+        const opt2 = new Option(`${p.Product} (₹${p.Price}, stock:${p.stock ?? '?'})`, p._id);
+        priceSelect.add(opt1);
+        stockSelect.add(opt2);
+      });
+    }
+
+    function addLog(msg) {
+      log.unshift(`[${new Date().toLocaleTimeString()}] ${msg}`);
+      document.getElementById("eventLog").innerHTML = log.slice(0,30).map(l => `<div>${l}</div>`).join("");
+    }
+
+    async function updatePrice() {
+      const id = document.getElementById("priceProduct").value;
+      const price = parseFloat(document.getElementById("newPrice").value);
+      if (!id || !price) return;
+      try {
+        const res = await fetch(`${API}/admin/update-price`, {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({product_id: id, new_price: price})
+        });
+        const json = await res.json();
+        if (json.success) {
+          document.getElementById("priceMsg").textContent = `✓ ${json.data.old_price} → ${json.data.new_price}`;
+          addLog(`PRICE_CHANGED: ${id.slice(-6)} ₹${json.data.old_price} → ₹${json.data.new_price}`);
+        } else {
+          document.getElementById("priceMsg").innerHTML = `<span class="err">✗ ${json.error}</span>`;
+        }
+      } catch(e) { document.getElementById("priceMsg").innerHTML = `<span class="err">Network error</span>`; }
+    }
+
+    async function updateStock() {
+      const id = document.getElementById("stockProduct").value;
+      const stock = parseInt(document.getElementById("newStock").value);
+      if (!id || isNaN(stock)) return;
+      try {
+        const res = await fetch(`${API}/admin/update-stock`, {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({product_id: id, new_stock: stock})
+        });
+        const json = await res.json();
+        if (json.success) {
+          document.getElementById("stockMsg").textContent = `✓ Stock set to ${stock}`;
+          addLog(`STOCK_CHANGED: ${id.slice(-6)} → ${stock} units`);
+        } else {
+          document.getElementById("stockMsg").innerHTML = `<span class="err">✗ ${json.error}</span>`;
+        }
+      } catch(e) { document.getElementById("stockMsg").innerHTML = `<span class="err">Network error</span>`; }
+    }
+
+    loadProducts();
+  </script>
+</body>
+</html>

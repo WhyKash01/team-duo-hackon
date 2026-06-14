@@ -129,6 +129,12 @@ func AddToCart(client *mongo.Client) gin.HandlerFunc {
 			return
 		}
 
+		// Check stock availability before adding
+		if product.Stock <= 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "Product is out of stock"})
+			return
+		}
+
 		cartCollection := database.OpenCollection("Carts", client)
 		cart, err := getOrCreateCart(ctx, cartCollection, userID)
 		if err != nil {
@@ -136,9 +142,19 @@ func AddToCart(client *mongo.Client) gin.HandlerFunc {
 			return
 		}
 
+		// Check if adding would exceed available stock
+		existingQty := 0
 		found := false
 		for i, item := range cart.Items {
 			if item.ProductID == prodID {
+				existingQty = item.Quantity
+				if existingQty+input.Quantity > product.Stock {
+					c.JSON(http.StatusConflict, gin.H{
+						"error":     fmt.Sprintf("Only %d units available (you have %d in cart)", product.Stock, existingQty),
+						"available": product.Stock,
+					})
+					return
+				}
 				cart.Items[i].Quantity += input.Quantity
 				cart.Items[i].Subtotal = float64(cart.Items[i].Quantity) * item.UnitPrice
 				found = true
@@ -147,11 +163,19 @@ func AddToCart(client *mongo.Client) gin.HandlerFunc {
 		}
 
 		if !found {
+			if input.Quantity > product.Stock {
+				c.JSON(http.StatusConflict, gin.H{
+					"error":     fmt.Sprintf("Only %d units available", product.Stock),
+					"available": product.Stock,
+				})
+				return
+			}
 			newItem := models.OrderItem{
-				ProductID: prodID,
-				Quantity:  input.Quantity,
-				UnitPrice: product.Price,
-				Subtotal:  float64(input.Quantity) * product.Price,
+				ProductID:  prodID,
+				Quantity:   input.Quantity,
+				UnitPrice:  product.Price,
+				PriceAtAdd: product.Price,
+				Subtotal:   float64(input.Quantity) * product.Price,
 			}
 			cart.Items = append(cart.Items, newItem)
 		}
@@ -222,6 +246,18 @@ func UpdateCartItem(client *mongo.Client) gin.HandlerFunc {
 			if item.ProductID == prodID {
 				found = true
 				if input.Quantity > 0 {
+					// Check stock limit
+					productCollection := database.OpenCollection("Products", client)
+					var product models.Product
+					if pErr := productCollection.FindOne(ctx, bson.M{"_id": prodID}).Decode(&product); pErr == nil {
+						if input.Quantity > product.Stock {
+							c.JSON(http.StatusConflict, gin.H{
+								"error":     fmt.Sprintf("Only %d units available", product.Stock),
+								"available": product.Stock,
+							})
+							return
+						}
+					}
 					item.Quantity = input.Quantity
 					item.Subtotal = float64(input.Quantity) * item.UnitPrice
 					updatedItems = append(updatedItems, item)
@@ -246,11 +282,24 @@ func UpdateCartItem(client *mongo.Client) gin.HandlerFunc {
 				return
 			}
 
+			if product.Stock <= 0 {
+				c.JSON(http.StatusConflict, gin.H{"error": "Product is out of stock"})
+				return
+			}
+			if input.Quantity > product.Stock {
+				c.JSON(http.StatusConflict, gin.H{
+					"error":     fmt.Sprintf("Only %d units available", product.Stock),
+					"available": product.Stock,
+				})
+				return
+			}
+
 			newItem := models.OrderItem{
-				ProductID: prodID,
-				Quantity:  input.Quantity,
-				UnitPrice: product.Price,
-				Subtotal:  float64(input.Quantity) * product.Price,
+				ProductID:  prodID,
+				Quantity:   input.Quantity,
+				UnitPrice:  product.Price,
+				PriceAtAdd: product.Price,
+				Subtotal:   float64(input.Quantity) * product.Price,
 			}
 			updatedItems = append(updatedItems, newItem)
 		}

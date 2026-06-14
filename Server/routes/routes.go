@@ -25,6 +25,10 @@ func SetupRouter() *gin.Engine {
 		// Product catalog routes
 		api.GET("/products", controllers.GetProducts(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
+
+		// Admin routes (unprotected for demo purposes)
+		api.POST("/admin/update-price", controllers.UpdateProductPrice(client))
+		api.POST("/admin/update-stock", controllers.UpdateProductStock(client))
 	}
 
 	// Protected Routes (requires AuthMiddleware)
@@ -40,9 +44,16 @@ func SetupRouter() *gin.Engine {
 		protected.DELETE("/cart/remove/:product_id", controllers.RemoveCartItem(client))
 		protected.DELETE("/cart/clear", controllers.ClearCart(client))
 
+		// Cart stability endpoints
+		protected.GET("/cart/status", controllers.GetCartStatus(client))
+		protected.POST("/cart/clear-stale", controllers.ClearStaleItem(client))
+
 		// Order management endpoints
 		protected.POST("/order/place", controllers.PlaceOrder(client))
 		protected.GET("/orders", controllers.GetUserOrders(client))
+
+		// Recommendation endpoints
+		protected.GET("/recommendations", controllers.GetRecommendations(client))
 	}
 
 	return r

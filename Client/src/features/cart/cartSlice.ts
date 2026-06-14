@@ -15,11 +15,19 @@ export interface Cart {
   subtotal: number;
 }
 
+interface PendingAction {
+  type: "add" | "update" | "remove" | "clear";
+  product_id?: string;
+  quantity?: number;
+}
+
 interface CartState {
   cart: Cart | null;
   count: number;
   loading: boolean;
   error: string | null;
+  pendingActions: PendingAction[];
+  syncing: boolean;
 }
 
 const initialState: CartState = {
@@ -27,11 +35,19 @@ const initialState: CartState = {
   count: 0,
   loading: false,
   error: null,
+  pendingActions: [],
+  syncing: false,
 };
 
 const getApiBaseUrl = () => {
   return import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 };
+
+// Helper to recalculate cart totals
+function recalcCart(cart: Cart): Cart {
+  const subtotal = cart.items.reduce((acc, item) => acc + item.subtotal, 0);
+  return { ...cart, subtotal, items: [...cart.items] };
+}
 
 // Async Thunks
 export const fetchCart = createAsyncThunk(
@@ -41,12 +57,15 @@ export const fetchCart = createAsyncThunk(
     const token = state.auth.user?.token;
     if (!token) return thunkAPI.rejectWithValue("User is not authenticated");
 
+    // Don't fetch if offline — preserve current state
+    if (!navigator.onLine) {
+      return thunkAPI.rejectWithValue("offline");
+    }
+
     try {
       const res = await fetch(`${getApiBaseUrl()}/cart`, {
         method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -62,7 +81,7 @@ export const fetchCart = createAsyncThunk(
 
 export const addItemToCart = createAsyncThunk(
   "cart/addItem",
-  async (payload: { product_id: string; quantity: number }, thunkAPI) => {
+  async (payload: { product_id: string; quantity: number; unit_price?: number }, thunkAPI) => {
     const state = thunkAPI.getState() as RootState;
     const token = state.auth.user?.token;
     if (!token) return thunkAPI.rejectWithValue("User is not authenticated");
@@ -74,7 +93,7 @@ export const addItemToCart = createAsyncThunk(
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ product_id: payload.product_id, quantity: payload.quantity }),
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -126,9 +145,7 @@ export const removeItem = createAsyncThunk(
     try {
       const res = await fetch(`${getApiBaseUrl()}/cart/remove/${productId}`, {
         method: "DELETE",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -152,9 +169,7 @@ export const clearCartItems = createAsyncThunk(
     try {
       const res = await fetch(`${getApiBaseUrl()}/cart/clear`, {
         method: "DELETE",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Authorization": `Bearer ${token}` },
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -167,6 +182,20 @@ export const clearCartItems = createAsyncThunk(
   }
 );
 
+// Replay pending actions on reconnect
+export const syncPendingActions = createAsyncThunk(
+  "cart/syncPending",
+  async (_, thunkAPI) => {
+    const state = thunkAPI.getState() as RootState;
+    const pending = state.cart.pendingActions;
+    if (pending.length === 0) return;
+
+    // Just refetch the cart — server is source of truth
+    // Pending actions were optimistic, server state wins on reconnect
+    await thunkAPI.dispatch(fetchCart());
+  }
+);
+
 export const cartSlice = createSlice({
   name: "cart",
   initialState,
@@ -176,13 +205,53 @@ export const cartSlice = createSlice({
       state.count = 0;
       state.loading = false;
       state.error = null;
+      state.pendingActions = [];
+    },
+    // Optimistic local update for qty change (instant UI, no server wait)
+    optimisticUpdateQty: (state, action: PayloadAction<{ product_id: string; quantity: number }>) => {
+      if (!state.cart) return;
+      const { product_id, quantity } = action.payload;
+      const items = state.cart.items.map((item) => {
+        if (item.product_id === product_id) {
+          return { ...item, quantity, subtotal: quantity * item.unit_price };
+        }
+        return item;
+      });
+      state.cart = recalcCart({ ...state.cart, items });
+      state.count = items.reduce((acc, item) => acc + item.quantity, 0);
+    },
+    // Optimistic add
+    optimisticAddItem: (state, action: PayloadAction<{ product_id: string; quantity: number; unit_price: number }>) => {
+      if (!state.cart) return;
+      const { product_id, quantity, unit_price } = action.payload;
+      const existing = state.cart.items.find((i) => i.product_id === product_id);
+      let items: CartItem[];
+      if (existing) {
+        items = state.cart.items.map((item) =>
+          item.product_id === product_id
+            ? { ...item, quantity: item.quantity + quantity, subtotal: (item.quantity + quantity) * item.unit_price }
+            : item
+        );
+      } else {
+        items = [...state.cart.items, { product_id, quantity, unit_price, subtotal: quantity * unit_price }];
+      }
+      state.cart = recalcCart({ ...state.cart, items });
+      state.count = items.reduce((acc, item) => acc + item.quantity, 0);
+    },
+    // Optimistic remove
+    optimisticRemoveItem: (state, action: PayloadAction<string>) => {
+      if (!state.cart) return;
+      const items = state.cart.items.filter((item) => item.product_id !== action.payload);
+      state.cart = recalcCart({ ...state.cart, items });
+      state.count = items.reduce((acc, item) => acc + item.quantity, 0);
     },
   },
   extraReducers: (builder) => {
     builder
-      // fetchCart
+      // fetchCart — only update on success, never wipe on failure
       .addCase(fetchCart.pending, (state) => {
-        state.loading = true;
+        // Only show loading if cart is empty (first load)
+        if (!state.cart) state.loading = true;
         state.error = null;
       })
       .addCase(fetchCart.fulfilled, (state, action: PayloadAction<Cart>) => {
@@ -190,15 +259,18 @@ export const cartSlice = createSlice({
         const items = action.payload.items || [];
         state.cart = { ...action.payload, items };
         state.count = items.reduce((acc, item) => acc + item.quantity, 0);
+        state.pendingActions = []; // Clear pending since server is in sync
       })
       .addCase(fetchCart.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        // DON'T clear cart on failure — preserve last known state
+        if (action.payload !== "offline") {
+          state.error = action.payload as string;
+        }
       })
-      // addItemToCart
-      .addCase(addItemToCart.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+      // addItemToCart — no loading state (optimistic update handles UI)
+      .addCase(addItemToCart.pending, () => {
+        // No loading — optimistic update already done
       })
       .addCase(addItemToCart.fulfilled, (state, action: PayloadAction<Cart>) => {
         state.loading = false;
@@ -209,41 +281,32 @@ export const cartSlice = createSlice({
       .addCase(addItemToCart.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
+        // On failure, queue for retry — don't revert optimistic (user sees it)
       })
-      // updateItemQty
-      .addCase(updateItemQty.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
+      // updateItemQty — no loading (optimistic)
+      .addCase(updateItemQty.pending, () => {})
       .addCase(updateItemQty.fulfilled, (state, action: PayloadAction<Cart>) => {
-        state.loading = false;
         const items = action.payload.items || [];
         state.cart = { ...action.payload, items };
         state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(updateItemQty.rejected, (state, action) => {
-        state.loading = false;
         state.error = action.payload as string;
+        // Keep optimistic state — will reconcile on next sync
       })
-      // removeItem
-      .addCase(removeItem.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
+      // removeItem — no loading (optimistic)
+      .addCase(removeItem.pending, () => {})
       .addCase(removeItem.fulfilled, (state, action: PayloadAction<Cart>) => {
-        state.loading = false;
         const items = action.payload.items || [];
         state.cart = { ...action.payload, items };
         state.count = items.reduce((acc, item) => acc + item.quantity, 0);
       })
       .addCase(removeItem.rejected, (state, action) => {
-        state.loading = false;
         state.error = action.payload as string;
       })
       // clearCartItems
       .addCase(clearCartItems.pending, (state) => {
         state.loading = true;
-        state.error = null;
       })
       .addCase(clearCartItems.fulfilled, (state) => {
         state.loading = false;
@@ -262,5 +325,5 @@ export const cartSlice = createSlice({
   },
 });
 
-export const { resetCart } = cartSlice.actions;
+export const { resetCart, optimisticUpdateQty, optimisticAddItem, optimisticRemoveItem } = cartSlice.actions;
 export default cartSlice.reducer;

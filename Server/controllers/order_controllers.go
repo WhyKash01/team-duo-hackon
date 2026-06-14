@@ -9,6 +9,7 @@ import (
 
 	"server/database"
 	"server/models"
+	"server/services"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -88,6 +89,32 @@ func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 
 		grandTotal := itemTotal + deliveryFee
 
+		// Feature 5: Reserve stock atomically via Redis
+		var reservedItems []struct {
+			ProductID string
+			Qty       int
+		}
+		for _, item := range validatedItems {
+			ok, err := services.ReserveStock(item.ProductID.Hex(), item.Quantity)
+			if err != nil || !ok {
+				// Release all previously reserved items
+				for _, reserved := range reservedItems {
+					services.ReleaseStock(reserved.ProductID, reserved.Qty)
+				}
+				c.JSON(http.StatusConflict, gin.H{
+					"success":           false,
+					"error":             "out_of_stock",
+					"unavailable_items": []string{item.ProductID.Hex()},
+					"message":           fmt.Sprintf("Product %s is out of stock", item.ProductID.Hex()),
+				})
+				return
+			}
+			reservedItems = append(reservedItems, struct {
+				ProductID string
+				Qty       int
+			}{item.ProductID.Hex(), item.Quantity})
+		}
+
 		// Initialize/override system fields
 		order.ID = bson.NewObjectID()
 		order.OrderID = generateOrderID()
@@ -101,8 +128,37 @@ func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 
 		_, insertErr := orderCollection.InsertOne(ctx, order)
 		if insertErr != nil {
+			// Release stock if order insert fails
+			for _, reserved := range reservedItems {
+				services.ReleaseStock(reserved.ProductID, reserved.Qty)
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to place order"})
 			return
+		}
+
+		// Feature 4: Publish purchase events for replenishment tracking
+		for _, item := range order.Items {
+			event := services.UserPurchaseEvent{
+				UserID:    userID.Hex(),
+				ProductID: item.ProductID.Hex(),
+				Timestamp: time.Now().Unix(),
+			}
+			services.PublishEvent(services.RoutingKeyUserPurchase, event)
+		}
+
+		// Feature 5: Update MongoDB stock (eventual consistency)
+		for _, item := range order.Items {
+			productCollection.UpdateOne(ctx, bson.M{"_id": item.ProductID}, bson.M{
+				"$inc": bson.M{"stock": -item.Quantity},
+			})
+			// Publish stock changed event for cart stability
+			currentStock := services.GetStock(item.ProductID.Hex())
+			if currentStock <= 5 {
+				services.PublishEvent(services.RoutingKeyStockChanged, services.StockChangedEvent{
+					ProductID: item.ProductID.Hex(),
+					NewStock:  currentStock,
+				})
+			}
 		}
 
 		// Only remove ordered items from user's cart; keep other items intact

@@ -1,7 +1,9 @@
 import { useState, useEffect, type FC } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
-import { updateItemQty, removeItem, clearCartItems } from "../features/cart/cartSlice";
+import { updateItemQty, removeItem, clearCartItems, optimisticUpdateQty, optimisticRemoveItem } from "../features/cart/cartSlice";
+import { fetchCartStatus } from "../features/cart/cartStabilitySlice";
+import { CartStabilityBanner } from "./CartStabilityBanner";
 import { type Product } from "./ProductPage";
 import { Trash2, Loader2, ShoppingBag, ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -12,10 +14,18 @@ export const CartPage: FC = () => {
 
   const { cart, loading } = useSelector((state: RootState) => state.cart);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const { staleItems } = useSelector((state: RootState) => state.cartStability);
 
   const [productDetails, setProductDetails] = useState<Record<string, Product>>({});
 
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+  // Fetch cart status on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchCartStatus());
+    }
+  }, [isAuthenticated, dispatch]);
 
   // Fetch product details for items in the cart that we don't have cached yet
   useEffect(() => {
@@ -71,6 +81,14 @@ export const CartPage: FC = () => {
   const itemsCount = cart?.items?.reduce((acc, item) => acc + item.quantity, 0) || 0;
   const isCartEmpty = !cart || !cart.items || cart.items.length === 0;
   const isBusy = loading;
+
+  // Check if any item exceeds available stock
+  const hasStockIssue = cart?.items?.some((item) => {
+    const product = productDetails[item.product_id];
+    if (product && product.stock !== undefined && item.quantity > product.stock) return true;
+    if (product && product.stock === 0) return true;
+    return false;
+  }) || false;
 
   return (
     <main className="max-w-[1500px] mx-auto p-4 md:py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start font-sans select-none text-[#0f1111] flex-1 w-full">
@@ -159,6 +177,15 @@ export const CartPage: FC = () => {
                               MRP: <span className="line-through">₹{product.MRP}</span> ({Math.round(((product.MRP - product.Price) / product.MRP) * 100)}% Off)
                             </span>
                           )}
+                          {product.stock === 0 && (
+                            <span className="text-red-600 font-bold">Out of Stock — remove to proceed</span>
+                          )}
+                          {product.stock !== undefined && product.stock > 0 && product.stock <= 5 && (
+                            <span className="text-orange-600 font-semibold">Only {product.stock} left in stock</span>
+                          )}
+                          {product.stock !== undefined && product.stock > 0 && item.quantity > product.stock && (
+                            <span className="text-red-600 font-bold">Reduce qty to {product.stock} or less</span>
+                          )}
                         </div>
                       ) : (
                         <div className="h-3 w-32 bg-gray-50 animate-pulse rounded mt-2"></div>
@@ -173,17 +200,14 @@ export const CartPage: FC = () => {
                         <select
                           value={item.quantity}
                           disabled={isBusy}
-                          onChange={(e) =>
-                            dispatch(
-                              updateItemQty({
-                                product_id: item.product_id,
-                                quantity: Number(e.target.value),
-                              })
-                            )
-                          }
+                          onChange={(e) => {
+                            const newQty = Number(e.target.value);
+                            dispatch(optimisticUpdateQty({ product_id: item.product_id, quantity: newQty }));
+                            dispatch(updateItemQty({ product_id: item.product_id, quantity: newQty }));
+                          }}
                           className="border border-gray-300 rounded bg-[#f0f2f2] px-2 py-1 outline-none cursor-pointer text-xs font-semibold disabled:opacity-60 transition"
                         >
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                          {Array.from({ length: Math.min(10, product?.stock ?? 10) }, (_, i) => i + 1).map((num) => (
                             <option key={num} value={num}>
                               {num}
                             </option>
@@ -194,12 +218,22 @@ export const CartPage: FC = () => {
                       {/* Delete Trigger */}
                       <button
                         disabled={isBusy}
-                        onClick={() => dispatch(removeItem(item.product_id))}
+                        onClick={() => {
+                          dispatch(optimisticRemoveItem(item.product_id));
+                          dispatch(removeItem(item.product_id));
+                        }}
                         className="text-[#007185] hover:text-[#c45500] hover:underline flex items-center gap-1 font-semibold cursor-pointer border-l border-gray-200 pl-4 disabled:opacity-60 transition"
                       >
                         <Trash2 size={13} /> Delete
                       </button>
                     </div>
+
+                    {/* Cart Stability Warnings */}
+                    {staleItems
+                      .filter((s) => s.product_id === item.product_id)
+                      .map((staleItem) => (
+                        <CartStabilityBanner key={staleItem.product_id + staleItem.type} staleItem={staleItem} />
+                      ))}
                   </div>
                 </div>
               );
@@ -239,10 +273,10 @@ export const CartPage: FC = () => {
 
           <button
             onClick={() => navigate("/checkout")}
-            disabled={isBusy}
+            disabled={isBusy || hasStockIssue}
             className="w-full bg-[#ffd814] hover:bg-[#f7ca00] active:bg-[#e2b800] text-[#0f1111] py-2 rounded-lg text-xs md:text-sm font-semibold cursor-pointer border border-[#f5c200] shadow-sm transition active:scale-[0.98] mt-2 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Proceed to Buy
+            {hasStockIssue ? "Remove unavailable items to proceed" : "Proceed to Buy"}
           </button>
 
           <hr className="border-gray-200 my-1" />

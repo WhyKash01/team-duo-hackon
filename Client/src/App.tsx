@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "./app/store";
-import { fetchCart, addItemToCart, resetCart, updateItemQty, removeItem } from "./features/cart/cartSlice";
+import { fetchCart, addItemToCart, resetCart, updateItemQty, removeItem, optimisticUpdateQty, optimisticAddItem, optimisticRemoveItem } from "./features/cart/cartSlice";
+import { fetchCartStatus } from "./features/cart/cartStabilitySlice";
+import { fetchRecommendations } from "./features/recommendations/recommendationSlice";
 import { Header } from "./components/Header";
 import { SubHeader } from "./components/SubHeader";
 import { HeroSection } from "./components/HeroSection";
@@ -12,6 +14,7 @@ import { CartPage } from "./components/CartPage";
 import { CheckoutPage } from "./components/CheckoutPage";
 import { OrderConfirmation } from "./components/OrderConfirmation";
 import { OrdersPage } from "./components/OrdersPage";
+import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
 import { Star, Loader2 } from "lucide-react";
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from "react-router-dom";
 
@@ -112,6 +115,24 @@ function App() {
     }
   }, [isAuthenticated, dispatch]);
 
+  // Poll cart stability status every 30 seconds (skip when offline)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (navigator.onLine) dispatch(fetchCartStatus());
+    const interval = setInterval(() => {
+      if (navigator.onLine) dispatch(fetchCartStatus());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, dispatch]);
+
+  // Fetch recommendations for product ordering
+  const recommendationItems = useSelector((state: RootState) => state.recommendations.items);
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchRecommendations());
+    }
+  }, [isAuthenticated, dispatch]);
+
   // Catalog data states
   const [products, setProducts] = useState<Product[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -135,14 +156,28 @@ function App() {
           setPagination(json.pagination || null);
         }
       } catch (err) {
+        // Don't clear products on failure — keep last known state
         console.error("Error fetching products:", err);
       } finally {
         setLoadingCatalog(false);
       }
     };
 
-    fetchProducts();
+    // Only fetch if online
+    if (navigator.onLine) {
+      fetchProducts();
+    } else {
+      setLoadingCatalog(false);
+    }
   }, [currentPage, location.pathname, apiBaseUrl]);
+
+  // Feature 4: Re-sort products when recommendations load
+  const sortedProducts = (() => {
+    if (!isAuthenticated || recommendationItems.length === 0) return products;
+    const scoreMap = new Map<string, number>();
+    recommendationItems.forEach((rec) => scoreMap.set(rec.product_id, rec.score));
+    return [...products].sort((a, b) => (scoreMap.get(b._id) || 0) - (scoreMap.get(a._id) || 0));
+  })();
 
   // Helper to generate stars and count dynamically for catalog looks
   const getRandomRating = (productId: string) => {
@@ -160,6 +195,9 @@ function App() {
         path="*"
         element={
           <div className="bg-[#eaeded] min-h-screen font-sans antialiased text-[#0f1111] flex flex-col">
+            {/* Network status banner for offline/online sync */}
+            <NetworkStatusBanner />
+
             {/* Header component connected to Redux */}
             <Header 
               cartCount={cartCount} 
@@ -202,26 +240,45 @@ function App() {
                           </div>
                           {/* Catalog Grid */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                            {products.map((product) => {
+                            {sortedProducts.map((product) => {
                               const ratingData = getRandomRating(product._id);
                               const hasDiscount = product.MRP > product.Price;
+                              const stock = (product as any).stock ?? 999;
+                              const isOutOfStock = stock === 0;
+                              const isLowStock = stock > 0 && stock <= 5;
+                              const recItem = recommendationItems.find((r) => r.product_id === product._id);
                               return (
                                 <div
                                   key={product._id}
                                   onClick={() => navigate(`/product/${product._id}`)}
-                                  className="bg-white p-4 rounded-sm flex flex-col justify-between shadow-sm hover:shadow-md transition duration-200 group cursor-pointer border border-gray-100 hover:border-gray-300"
+                                  className={`bg-white p-4 rounded-sm flex flex-col justify-between shadow-sm hover:shadow-md transition duration-200 group cursor-pointer border ${isOutOfStock ? "border-red-200 opacity-75" : "border-gray-100 hover:border-gray-300"}`}
                                 >
                                   <div>
-                                    {/* Image with discount badge */}
+                                    {/* Image with discount badge + stock/recommendation badge */}
                                     <div className="h-[150px] w-full flex items-center justify-center overflow-hidden mb-3 bg-white p-1 rounded-sm relative">
                                       <img
                                         src={product.image_small}
                                         alt={product.Product}
-                                        className="max-h-full max-w-full object-contain group-hover:scale-[1.03] transition duration-200 select-none"
+                                        className={`max-h-full max-w-full object-contain group-hover:scale-[1.03] transition duration-200 select-none ${isOutOfStock ? "grayscale" : ""}`}
                                       />
-                                      {hasDiscount && (
+                                      {hasDiscount && !isOutOfStock && (
                                         <span className="absolute top-1.5 left-1.5 bg-[#cc0c39] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
                                           {Math.round(((product.MRP - product.Price) / product.MRP) * 100)}% Off
+                                        </span>
+                                      )}
+                                      {isOutOfStock && (
+                                        <span className="absolute top-1.5 left-1.5 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
+                                          Out of Stock
+                                        </span>
+                                      )}
+                                      {isLowStock && !isOutOfStock && (
+                                        <span className="absolute top-1.5 right-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">
+                                          Only {stock} left
+                                        </span>
+                                      )}
+                                      {recItem && !isOutOfStock && (
+                                        <span className="absolute bottom-1.5 left-1.5 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm flex items-center gap-0.5">
+                                          ⟳ Buy Again
                                         </span>
                                       )}
                                     </div>
@@ -260,16 +317,29 @@ function App() {
 
                                      {/* Direct Add to Cart Button or Quantity Selector */}
                                      {(() => {
+                                       if (isOutOfStock) {
+                                         return (
+                                           <button
+                                             disabled
+                                             className="w-full bg-gray-200 text-gray-500 py-1.5 rounded-full text-xs font-semibold border border-gray-300 cursor-not-allowed"
+                                           >
+                                             Out of Stock
+                                           </button>
+                                         );
+                                       }
                                        const cartItem = cartItems.find((item) => item.product_id === product._id);
                                        if (cartItem) {
+                                         const atMax = cartItem.quantity >= stock;
                                          return (
                                            <div className="flex items-center justify-between w-full h-[28px] border border-gray-300 rounded-full overflow-hidden select-none bg-gray-50">
                                              <button
                                                onClick={(e) => {
                                                  e.stopPropagation();
                                                  if (cartItem.quantity === 1) {
+                                                   dispatch(optimisticRemoveItem(product._id));
                                                    dispatch(removeItem(product._id));
                                                  } else {
+                                                   dispatch(optimisticUpdateQty({ product_id: product._id, quantity: cartItem.quantity - 1 }));
                                                    dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity - 1 }));
                                                  }
                                                }}
@@ -283,9 +353,13 @@ function App() {
                                              <button
                                                onClick={(e) => {
                                                  e.stopPropagation();
-                                                 dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                                                 if (!atMax) {
+                                                   dispatch(optimisticUpdateQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                                                   dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                                                 }
                                                }}
-                                               className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-r-full"
+                                               disabled={atMax}
+                                               className="bg-[#f0f2f2] hover:bg-[#e3e6e6] active:bg-[#d8dbdb] text-[#0f1111] px-3 h-full font-bold active:scale-[0.95] cursor-pointer transition text-sm flex items-center justify-center rounded-r-full disabled:opacity-40 disabled:cursor-not-allowed"
                                              >
                                                +
                                              </button>
@@ -299,6 +373,7 @@ function App() {
                                              if (!isAuthenticated) {
                                                navigate("/auth");
                                              } else {
+                                               dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
                                                dispatch(addItemToCart({ product_id: product._id, quantity: 1 }));
                                              }
                                            }}
@@ -353,7 +428,8 @@ function App() {
                       if (!isAuthenticated) {
                         navigate("/auth");
                       } else {
-                        dispatch(addItemToCart({ product_id, quantity: qty }));
+                        // Use updateItemQty to SET exact quantity (not increment)
+                        dispatch(updateItemQty({ product_id, quantity: qty }));
                       }
                     }}
                   />

@@ -18,6 +18,7 @@ export interface Product {
   Category?: string;
   "Sub-Category"?: string;
   image_small: string;
+  stock?: number;
   id?: number;
 }
 
@@ -213,7 +214,14 @@ export const ProductPage: FC<ProductPageProps> = ({
           {pincodeSuccess && <p className="text-xs text-green-600 font-semibold mt-0.5">{pincodeSuccess}</p>}
         </form>
 
-        <p className="text-xs text-[#007600] font-bold mt-2">In Stock</p>
+        {/* Stock Status */}
+        {product.stock === 0 ? (
+          <p className="text-xs text-red-600 font-bold mt-2">Currently Unavailable</p>
+        ) : product.stock !== undefined && product.stock <= 5 ? (
+          <p className="text-xs text-orange-600 font-bold mt-2">Only {product.stock} left in stock — order soon</p>
+        ) : (
+          <p className="text-xs text-[#007600] font-bold mt-2">In Stock</p>
+        )}
 
         {/* Qty Selector */}
         <div className="flex items-center gap-2 text-sm">
@@ -221,9 +229,10 @@ export const ProductPage: FC<ProductPageProps> = ({
           <select
             value={selectedQty}
             onChange={(e) => setSelectedQty(Number(e.target.value))}
-            className="border border-gray-300 rounded bg-[#f0f2f2] px-2 py-1 text-xs font-medium outline-none cursor-pointer"
+            disabled={product.stock === 0}
+            className="border border-gray-300 rounded bg-[#f0f2f2] px-2 py-1 text-xs font-medium outline-none cursor-pointer disabled:opacity-50"
           >
-            {[1, 2, 3, 4, 5, 6].map((num) => (
+            {Array.from({ length: Math.min(6, product.stock ?? 6) }, (_, i) => i + 1).map((num) => (
               <option key={num} value={num}>{num}</option>
             ))}
           </select>
@@ -233,9 +242,10 @@ export const ProductPage: FC<ProductPageProps> = ({
         <div className="flex flex-col gap-2.5 mt-2">
           <button
             onClick={handleAddToCartClick}
-            className="w-full bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] py-2.5 rounded-full text-xs md:text-sm font-semibold cursor-pointer border border-[#fcd200] transition active:scale-[0.98]"
+            disabled={product.stock === 0}
+            className="w-full bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] py-2.5 rounded-full text-xs md:text-sm font-semibold cursor-pointer border border-[#fcd200] transition active:scale-[0.98] disabled:bg-gray-200 disabled:text-gray-500 disabled:border-gray-300 disabled:cursor-not-allowed"
           >
-            Add to Cart
+            {product.stock === 0 ? "Out of Stock" : "Add to Cart"}
           </button>
           <button
             onClick={() => navigate("/cart")}

@@ -27,12 +27,14 @@ type Product struct {
 	Category    string        `json:"Category,omitempty" bson:"category_name,omitempty"`
 	SubCategory string        `json:"Sub-Category,omitempty" bson:"sub_category_name,omitempty"`
 	ImageURL    string        `json:"image_small" bson:"image_small" validate:"required,url"`
+	Stock       int           `json:"stock" bson:"stock"`
 }
 type OrderItem struct {
-	ProductID bson.ObjectID `json:"product_id" bson:"product_id" validate:"required"`
-	Quantity  int           `json:"quantity" bson:"quantity" validate:"required,gt=0"`
-	UnitPrice float64       `json:"unit_price" bson:"unit_price" validate:"required,gt=0"`
-	Subtotal  float64       `json:"subtotal" bson:"subtotal" validate:"required,gt=0"`
+	ProductID  bson.ObjectID `json:"product_id" bson:"product_id" validate:"required"`
+	Quantity   int           `json:"quantity" bson:"quantity" validate:"required,gt=0"`
+	UnitPrice  float64       `json:"unit_price" bson:"unit_price" validate:"required,gt=0"`
+	PriceAtAdd float64       `json:"price_at_add" bson:"price_at_add"`
+	Subtotal   float64       `json:"subtotal" bson:"subtotal" validate:"required,gt=0"`
 }
 type Order struct {
 	ID               bson.ObjectID `json:"_id,omitempty" bson:"_id,omitempty"`
