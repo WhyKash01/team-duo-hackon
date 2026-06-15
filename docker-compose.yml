@@ -1,7 +1,9 @@
 version: "3.8"
+
 services:
   redis:
     image: redis:7-alpine
+    restart: always
     ports:
       - "6379:6379"
     volumes:
@@ -9,6 +11,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    restart: always
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -18,6 +21,7 @@ services:
 
   postgres:
     image: ankane/pgvector:latest
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -26,6 +30,40 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: ./Server
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PG_URI=postgres://postgres:postgres@postgres:5432/hackon
+      - ML_ENGINE_URL=http://ml_engine:8000
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=8080
+      - GIN_MODE=release
+    depends_on:
+      - redis
+      - rabbitmq
+      - postgres
+      - ml_engine
+
+  ml_engine:
+    build:
+      context: ./ml_engine
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PG_URI=postgresql://postgres:postgres@postgres:5432/hackon
+    depends_on:
+      - rabbitmq
+      - postgres
 
 volumes:
   redis_data:

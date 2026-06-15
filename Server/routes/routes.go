@@ -12,7 +12,12 @@ import (
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
 	var client *mongo.Client = database.DBInstance()
+	
+	// Initialize Redis for rate limiting
+	database.InitRedis()
+	
 	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.RateLimiter(database.RedisClient))
 
 	// Unprotected Routes
 	api := r.Group("/api")

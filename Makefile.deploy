@@ -1,0 +1,26 @@
+# ============================================================
+# AWS EC2 DEPLOYMENT MAKEFILE
+# ============================================================
+# Run:  make -f Makefile.deploy deploy
+# ============================================================
+
+.PHONY: deploy stop logs
+
+# Build and start all 5 services via Docker Compose
+deploy:
+	@echo "============================================"
+	@echo "  DEPLOYING ALL SERVICES TO EC2..."
+	@echo "============================================"
+	sudo docker-compose up -d --build
+	@echo ""
+	@echo "Deployment successfully started in the background!"
+	@echo "To view live logs, run: make -f Makefile.deploy logs"
+
+# Stop all services
+stop:
+	@echo "Stopping all services..."
+	sudo docker-compose down
+
+# View logs for all services
+logs:
+	sudo docker-compose logs -f

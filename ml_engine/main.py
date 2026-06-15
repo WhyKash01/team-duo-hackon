@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 from typing import Optional, Dict, Any
 import psycopg2
 import math
+import os
 
 app = FastAPI()
 
@@ -20,7 +21,7 @@ seeding_status = {
     "error": None
 }
 
-# Local Docker Database Config
+# Local Database Config Fallback
 DB_CONFIG = {
     "dbname": "hackon",
     "user": "postgres",
@@ -30,6 +31,11 @@ DB_CONFIG = {
 }
 
 def get_db_connection():
+    # If deployed (Docker/EC2), use the PG_URI environment variable
+    pg_uri = os.environ.get("PG_URI")
+    if pg_uri:
+        return psycopg2.connect(pg_uri)
+    # Otherwise use local config
     return psycopg2.connect(**DB_CONFIG)
 
 # --- 1. Automatic Database Setup ---

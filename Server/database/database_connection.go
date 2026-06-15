@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -65,4 +66,28 @@ func OpenCollection(collectionName string, client *mongo.Client) *mongo.Collecti
 	fmt.Println("DATABASE_NAME: ", databaseName)
 
 	return client.Database(databaseName).Collection(collectionName)
+}
+
+// RedisClient is a global Redis client instance.
+var RedisClient *redis.Client
+
+// InitRedis initializes the Redis client connection.
+func InitRedis() {
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379" // fallback for local dev
+	}
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Printf("Warning: failed to parse REDIS_URL: %v", err)
+		opts = &redis.Options{Addr: "localhost:6379"}
+	}
+	RedisClient = redis.NewClient(opts)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := RedisClient.Ping(ctx).Err(); err != nil {
+		log.Printf("Warning: Redis ping failed. Rate limiter will be bypassed. Error: %v", err)
+	} else {
+		fmt.Println("Successfully connected to Redis")
+	}
 }
