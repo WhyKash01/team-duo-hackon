@@ -26,10 +26,26 @@ func generateOrderID() string {
 
 func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var order models.Order
-		if err := c.ShouldBindJSON(&order); err != nil {
+		var req struct {
+			Items []struct {
+				ProductID bson.ObjectID `json:"product_id" validate:"required"`
+				Quantity  int           `json:"quantity" validate:"required,gt=0"`
+			} `json:"items" validate:"required,dive"`
+			DeliveryLocation models.Address `json:"delivery_location" validate:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
+		}
+
+		var order models.Order
+		order.DeliveryLocation = req.DeliveryLocation
+		for _, item := range req.Items {
+			order.Items = append(order.Items, models.OrderItem{
+				ProductID: item.ProductID,
+				Quantity:  item.Quantity,
+			})
 		}
 
 		userID, err := getUserObjectID(c)
