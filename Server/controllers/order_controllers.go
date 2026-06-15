@@ -28,8 +28,8 @@ func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Items []struct {
-				ProductID bson.ObjectID `json:"product_id" validate:"required"`
-				Quantity  int           `json:"quantity" validate:"required,gt=0"`
+				ProductID string `json:"product_id" validate:"required"`
+				Quantity  int    `json:"quantity" validate:"required,gt=0"`
 			} `json:"items" validate:"required,dive"`
 			DeliveryLocation models.Address `json:"delivery_location" validate:"required"`
 		}
@@ -42,8 +42,13 @@ func PlaceOrder(client *mongo.Client) gin.HandlerFunc {
 		var order models.Order
 		order.DeliveryLocation = req.DeliveryLocation
 		for _, item := range req.Items {
+			objID, err := bson.ObjectIDFromHex(item.ProductID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid Product ID format"})
+				return
+			}
 			order.Items = append(order.Items, models.OrderItem{
-				ProductID: item.ProductID,
+				ProductID: objID,
 				Quantity:  item.Quantity,
 			})
 		}
