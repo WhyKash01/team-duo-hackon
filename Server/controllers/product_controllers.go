@@ -629,3 +629,61 @@ func GetProductsByCategories(client *mongo.Client) gin.HandlerFunc {
 		})
 	}
 }
+
+// GetProductsByIDs accepts a list of product IDs and returns matching products.
+func GetProductsByIDs(client *mongo.Client) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var req struct {
+			ProductIDs []string `json:"product_ids" binding:"required,min=1"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body. 'product_ids' array is required."})
+			return
+		}
+
+		var objectIDs []bson.ObjectID
+		for _, idStr := range req.ProductIDs {
+			objID, err := bson.ObjectIDFromHex(idStr)
+			if err == nil {
+				objectIDs = append(objectIDs, objID)
+			}
+		}
+
+		if len(objectIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data":    []models.Product{},
+			})
+			return
+		}
+
+		productCollection := database.OpenCollection("Products", client)
+		filter := bson.M{"_id": bson.M{"$in": objectIDs}}
+
+		cursor, err := productCollection.Find(ctx, filter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query products"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var products []models.Product
+		if err = cursor.All(ctx, &products); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse products"})
+			return
+		}
+
+		if products == nil {
+			products = []models.Product{}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    products,
+		})
+	}
+}

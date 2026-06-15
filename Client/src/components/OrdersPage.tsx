@@ -2,6 +2,7 @@ import { useEffect, useState, type FC } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
 import { fetchUserOrders } from "../features/order/orderSlice";
+import { optimisticAddItem, addItemToCart, clearCartItems } from "../features/cart/cartSlice";
 import { type Product } from "./ProductPage";
 import { Package, Loader2, ChevronLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -14,6 +15,55 @@ export const OrdersPage: FC = () => {
   const [productDetails, setProductDetails] = useState<Record<string, Product>>({});
 
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  const handleInstantReorder = async (orderId: string, orderItems: any[]) => {
+    setReorderingId(orderId);
+    try {
+      const productIds = orderItems.map(item => item.product_id);
+      
+      const res = await fetch(`${apiBaseUrl}/products/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product_ids: productIds })
+      });
+      
+      if (!res.ok) throw new Error("Failed to fetch product details");
+      const json = await res.json();
+      if (!json.success || !json.data) throw new Error("Invalid response");
+      
+      const fullProducts = json.data;
+      
+      await dispatch(clearCartItems()).unwrap();
+      
+      const outOfStockItems: any[] = [];
+      for (const item of orderItems) {
+        const product = fullProducts.find((p: any) => p._id === item.product_id);
+        if (product) {
+          if (product.stock === 0) {
+            outOfStockItems.push(product);
+          } else {
+            dispatch(optimisticAddItem({ 
+              product_id: product._id, 
+              quantity: item.quantity, 
+              unit_price: product.Price 
+            }));
+            await dispatch(addItemToCart({ 
+              product_id: product._id, 
+              quantity: item.quantity 
+            })).unwrap();
+          }
+        }
+      }
+      navigate("/cart", { state: { outOfStockItems } });
+    } catch (err) {
+      console.error("Instant reorder failed:", err);
+      alert("Failed to instant reorder. Please try again.");
+    } finally {
+      setReorderingId(null);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -141,9 +191,23 @@ export const OrdersPage: FC = () => {
                       <span className="font-semibold text-[#0f1111]">₹{order.grand_total}</span>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="text-gray-500 uppercase font-bold tracking-wide">Order #</span>
-                    <span className="font-semibold text-[#0f1111]">{order.order_id}</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className="text-gray-500 uppercase font-bold tracking-wide">Order #</span>
+                      <span className="font-semibold text-[#0f1111]">{order.order_id}</span>
+                    </div>
+                    <button 
+                      onClick={() => handleInstantReorder(order._id, order.items)}
+                      disabled={reorderingId === order._id}
+                      className="flex items-center gap-1.5 bg-[#ffd814] hover:bg-[#f7ca00] text-[#0f1111] text-xs font-semibold px-3 py-1.5 rounded-full border border-[#f5c200] shadow-sm transition active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      {reorderingId === order._id ? (
+                        <Loader2 size={14} className="animate-spin text-gray-600" />
+                      ) : (
+                        <Package size={14} />
+                      )}
+                      {reorderingId === order._id ? "Reordering..." : "Instant Reorder"}
+                    </button>
                   </div>
                 </div>
 

@@ -27,6 +27,7 @@ func SetupRouter() *gin.Engine {
 		api.GET("/search", controllers.SearchProducts(client))
 		api.GET("/search-category", controllers.SearchByCategory(client))
 		api.POST("/products/categories", controllers.GetProductsByCategories(client))
+		api.POST("/products/batch", controllers.GetProductsByIDs(client))
 		api.GET("/categories/top", controllers.GetTopCategories(client))
 		api.GET("/products/:id", controllers.GetProductByID(client))
 		api.GET("/products/:id/substitutes", controllers.GetProductSubstitutes(client))

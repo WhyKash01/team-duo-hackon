@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { type RootState } from "../app/store";
 import { logout } from "../features/auth/authSlice";
 import { Search, MapPin, ShoppingCart, ChevronDown, Mic, MicOff, Zap } from "lucide-react";
+import { Link } from "react-router-dom";
 
 interface HeaderProps {
   cartCount?: number;
@@ -225,9 +226,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                 </div>
                 <div className="flex flex-col text-xs font-normal gap-1.5 py-1">
-                  <a href="#" className="hover:underline hover:text-[#c45500]">Your Account</a>
-                  <a href="#" className="hover:underline hover:text-[#c45500]">Your Orders</a>
-                  <a href="#" className="hover:underline hover:text-[#c45500]">Your Wish List</a>
+                  <Link to="/orders" className="hover:underline hover:text-[#c45500]">Your Orders</Link>
                 </div>
                 <button
                   onClick={handleLogout}

@@ -1,22 +1,112 @@
 import { useState, useEffect, type FC } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { type RootState, type AppDispatch } from "../app/store";
-import { updateItemQty, removeItem, clearCartItems, optimisticUpdateQty, optimisticRemoveItem } from "../features/cart/cartSlice";
+import { updateItemQty, removeItem, clearCartItems, optimisticUpdateQty, optimisticRemoveItem, optimisticAddItem, addItemToCart } from "../features/cart/cartSlice";
 import { fetchCartStatus } from "../features/cart/cartStabilitySlice";
 import { CartStabilityBanner } from "./CartStabilityBanner";
 import { type Product } from "./ProductPage";
-import { Trash2, Loader2, ShoppingBag, ChevronLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Trash2, Loader2, ShoppingBag, ChevronLeft, Sparkles, Plus } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+
+const SubstituteSlider: FC<{ productId: string }> = ({ productId }) => {
+  const [substitutes, setSubstitutes] = useState<any[]>([]);
+  const [details, setDetails] = useState<Record<string, Product>>({});
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
+  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+
+  const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+  useEffect(() => {
+    const fetchSubstitutes = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${apiBaseUrl}/products/${productId}/substitutes`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            setSubstitutes(json.data);
+            
+            const detailRes = await fetch(`${apiBaseUrl}/products/batch`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ product_ids: json.data.map((s: any) => s._id?.$oid || s.id) })
+            });
+            if (detailRes.ok) {
+              const dJson = await detailRes.json();
+              if (dJson.success) {
+                const detMap: Record<string, Product> = {};
+                dJson.data.forEach((p: Product) => {
+                  detMap[p._id] = p;
+                });
+                setDetails(detMap);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSubstitutes();
+  }, [productId, apiBaseUrl]);
+
+  if (loading) return <div className="animate-pulse h-32 bg-gray-100 rounded"></div>;
+  if (substitutes.length === 0) return <p className="text-xs text-gray-500">No substitutes found.</p>;
+
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin">
+      {substitutes.map(sub => {
+        const subId = sub._id?.$oid || sub.id;
+        const detail = details[subId];
+        const image = detail?.image_small || "https://via.placeholder.com/150";
+        return (
+          <div key={subId} className="w-[140px] shrink-0 border border-gray-200 rounded p-2 flex flex-col justify-between cursor-pointer hover:shadow-md transition bg-white"
+            onClick={() => navigate(`/product/${subId}`)}>
+            <img src={image} className="w-full h-[80px] object-contain mb-2" alt={sub.name} />
+            <span className="text-[10px] text-gray-500 line-clamp-1 uppercase tracking-wide">{sub.brand}</span>
+            <span className="text-xs font-semibold line-clamp-2 leading-tight mb-1">{sub.name}</span>
+            <div className="flex flex-col gap-1 mt-auto">
+              <span className="font-bold text-sm">₹{sub.price}</span>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!isAuthenticated) navigate("/auth");
+                  else {
+                    dispatch(optimisticAddItem({ product_id: subId, quantity: 1, unit_price: sub.price }));
+                    dispatch(addItemToCart({ product_id: subId, quantity: 1 }));
+                  }
+                }}
+                className="w-full bg-[#ffd814] hover:bg-[#f7ca00] py-1 text-[10px] font-semibold rounded-full border border-[#f5c200] transition active:scale-95">
+                Add to Cart
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export const CartPage: FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const outOfStockItems = location.state?.outOfStockItems || [];
 
   const { cart, loading } = useSelector((state: RootState) => state.cart);
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const favCategories = useSelector((state: RootState) => state.favCategory.categories);
   const { staleItems } = useSelector((state: RootState) => state.cartStability);
 
+  const [favProducts, setFavProducts] = useState<Product[]>([]);
+  const [loadingFavProducts, setLoadingFavProducts] = useState(false);
+
   const [productDetails, setProductDetails] = useState<Record<string, Product>>({});
+  const [localOutOfStock, setLocalOutOfStock] = useState<Set<string>>(new Set());
 
   const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
@@ -60,6 +150,39 @@ export const CartPage: FC = () => {
 
     fetchDetails();
   }, [cart, productDetails, isAuthenticated, apiBaseUrl]);
+
+  // Fetch favorite products
+  useEffect(() => {
+    if (!isAuthenticated || favCategories.length === 0) {
+      setFavProducts([]);
+      return;
+    }
+
+    const fetchFavProducts = async () => {
+      setLoadingFavProducts(true);
+      try {
+        const res = await fetch(`${apiBaseUrl}/products/categories?page=1&limit=4`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ categories: favCategories }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) {
+            setFavProducts(json.data || []);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching favorite products:", err);
+      } finally {
+        setLoadingFavProducts(false);
+      }
+    };
+
+    fetchFavProducts();
+  }, [favCategories, isAuthenticated, apiBaseUrl]);
 
   // If user is not logged in
   if (!isAuthenticated) {
@@ -152,7 +275,7 @@ export const CartPage: FC = () => {
                   </div>
 
                   {/* Product Description */}
-                  <div className="flex-1 flex flex-col justify-between">
+                  <div className="flex-1 flex flex-col justify-between min-w-0">
                     <div>
                       <div className="flex justify-between items-start gap-4">
                         {product ? (
@@ -228,6 +351,17 @@ export const CartPage: FC = () => {
                       </button>
                     </div>
 
+                    {/* Substitutes for out of stock items */}
+                    {product && product.stock === 0 && (
+                      <div className="mt-4 bg-red-50 p-3 rounded border border-red-100 w-full overflow-hidden">
+                        <h4 className="text-sm font-bold text-red-800 mb-2 flex items-center gap-1">
+                          <Sparkles size={14} className="text-[#e77600]" />
+                          Try these similar items instead:
+                        </h4>
+                        <SubstituteSlider productId={product._id} />
+                      </div>
+                    )}
+
                     {/* Cart Stability Warnings */}
                     {staleItems
                       .filter((s) => s.product_id === item.product_id)
@@ -247,6 +381,164 @@ export const CartPage: FC = () => {
             <span className="font-bold">₹{cart?.subtotal || 0}</span>
           </span>
         </div>
+
+        {outOfStockItems.length > 0 && (
+          <div className="mt-4 border-t border-gray-200 pt-5">
+            <div className="bg-red-50 border border-red-200 rounded p-4 mb-4">
+              <h3 className="text-sm font-bold text-red-800 mb-1">Items from your reorder are out of stock</h3>
+              <p className="text-xs text-red-600">We couldn't add some items to your cart because they are currently unavailable. Check out these smart alternatives instead:</p>
+            </div>
+            <div className="flex flex-col gap-6">
+              {outOfStockItems.map((oosItem: any) => (
+                <div key={oosItem._id} className="bg-[#f0f2f2] p-4 rounded-sm border border-gray-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles size={16} className="text-[#e77600]" />
+                    <p className="text-sm font-bold text-[#0f1111]">Substitutes for: <span className="font-semibold text-gray-700">{oosItem.Product}</span></p>
+                  </div>
+                  <SubstituteSlider productId={oosItem._id} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Favorite Products Slider in Cart */}
+        {isAuthenticated && favProducts.length > 0 && !loadingFavProducts && (
+          <div className="mt-8 border-t border-gray-100 pt-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl md:text-2xl font-bold text-[#0f1111] flex items-center gap-2">
+                From Your Favorite Categories
+              </h2>
+              <span className="text-sm text-[#007185] hover:text-[#c45500] cursor-pointer font-medium hidden sm:inline" onClick={() => navigate("/")}>
+                See more ›
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-6 pb-2">
+              {favProducts.slice(0, 4).map((product) => {
+                const hasDiscount = product.MRP > product.Price;
+                const stock = (product as any).stock ?? 999;
+                const isOutOfStock = stock === 0 || localOutOfStock.has(product._id);
+                const isLowStock = stock > 0 && stock <= 5;
+                const cartItem = cart?.items?.find((item) => item.product_id === product._id);
+                return (
+                  <div
+                    key={product._id}
+                    onClick={() => navigate(`/product/${product._id}`)}
+                    className={`w-full bg-white rounded-lg flex flex-col justify-between transition duration-200 cursor-pointer border relative group/card ${
+                      isOutOfStock ? "border-red-200 opacity-70" : "border-gray-200 hover:shadow-md hover:border-gray-300"
+                    }`}
+                  >
+                    {hasDiscount && !isOutOfStock && (
+                      <span className="absolute top-2 left-2 z-10 bg-[#cc0c39] text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                        {Math.round((1 - product.Price / product.MRP) * 100)}% off
+                      </span>
+                    )}
+                    {isLowStock && !isOutOfStock && (
+                      <span className="absolute top-2 left-2 z-10 bg-[#b12704] text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                        Only {stock} left
+                      </span>
+                    )}
+                    {isOutOfStock && (
+                      <span className="absolute top-2 left-2 z-10 bg-gray-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                        Out of Stock
+                      </span>
+                    )}
+
+                    <div className={`h-[120px] w-full p-2 bg-[#f7f7f7] rounded-t-lg flex items-center justify-center relative overflow-hidden ${isOutOfStock ? "grayscale" : ""}`}>
+                      <img
+                        src={product.image_small || `https://picsum.photos/seed/${product._id}/300/300`}
+                        alt={product.Product}
+                        className="max-h-full max-w-full object-contain mix-blend-multiply group-hover/card:scale-105 transition-transform duration-300"
+                      />
+                    </div>
+
+                    {!isOutOfStock && !cartItem && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          dispatch(optimisticAddItem({ product_id: product._id, quantity: 1, unit_price: product.Price }));
+                          try {
+                            await dispatch(addItemToCart({ product_id: product._id, quantity: 1 })).unwrap();
+                          } catch (error: any) {
+                            const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                            if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                              setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                              alert("This item is now out of stock.");
+                            } else {
+                              alert(error || "Failed to add to cart");
+                            }
+                          }
+                        }}
+                        className="absolute bottom-0 right-3 w-8 h-8 bg-[#49a353] hover:bg-[#3d8b46] text-white rounded-full flex items-center justify-center shadow-md transition active:scale-90 cursor-pointer z-10"
+                        title="Add to cart"
+                      >
+                        <Plus size={18} strokeWidth={3} />
+                      </button>
+                    )}
+
+                    {!isOutOfStock && cartItem && (
+                      <div className="absolute bottom-0 right-3 flex items-center h-8 bg-[#49a353] rounded-full shadow-md overflow-hidden z-10">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (cartItem.quantity === 1) {
+                              dispatch(optimisticRemoveItem(product._id));
+                              dispatch(removeItem(product._id));
+                            } else {
+                              dispatch(optimisticUpdateQty({ product_id: product._id, quantity: cartItem.quantity - 1 }));
+                              dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity - 1 }));
+                            }
+                          }}
+                          className="text-white px-2 h-full font-bold cursor-pointer transition text-sm flex items-center justify-center hover:bg-[#3d8b46] active:scale-90"
+                        >
+                          −
+                        </button>
+                        <span className="text-white text-xs font-bold px-2">{cartItem.quantity}</span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const atMax = cartItem.quantity >= stock;
+                            if (!atMax) {
+                              dispatch(optimisticUpdateQty({ product_id: product._id, quantity: cartItem.quantity + 1 }));
+                              try {
+                                await dispatch(updateItemQty({ product_id: product._id, quantity: cartItem.quantity + 1 })).unwrap();
+                              } catch (error: any) {
+                                const errMsg = typeof error === 'string' ? error.toLowerCase() : '';
+                                if (errMsg.includes("out of stock") || errMsg.includes("available")) {
+                                  setLocalOutOfStock(prev => new Set(prev).add(product._id));
+                                  alert("This item is now out of stock.");
+                                } else {
+                                  alert(error || "Failed to update cart");
+                                }
+                              }
+                            }
+                          }}
+                          className="text-white px-2 h-full font-bold cursor-pointer transition text-sm flex items-center justify-center hover:bg-[#3d8b46] active:scale-90"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="p-3 pt-2 flex flex-col gap-1">
+                      <h3 className="text-xs text-[#0f1111] font-medium leading-snug line-clamp-2 min-h-[32px]">
+                        {product.Product}
+                      </h3>
+                      <span className="text-[10px] text-gray-400 truncate">{product.Quantity}</span>
+                      <div className="flex items-baseline gap-1.5 mt-1">
+                        <span className="text-sm font-bold text-[#0f1111]">₹{product.Price}</span>
+                        {hasDiscount && (
+                          <span className="text-[10px] text-gray-400 line-through">₹{product.MRP}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right Area: Checkout subtotal summary panel */}

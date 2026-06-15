@@ -95,15 +95,6 @@ export const OrderConfirmation: FC = () => {
     );
   }
 
-  const estimatedDate = new Date();
-  estimatedDate.setDate(estimatedDate.getDate() + 2);
-  const formattedDate = estimatedDate.toLocaleDateString("en-IN", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
   return (
     <main className="max-w-[900px] mx-auto p-4 md:py-8 flex flex-col gap-6 font-sans select-none text-[#0f1111] flex-1 w-full">
       {/* Success Header */}
@@ -118,7 +109,7 @@ export const OrderConfirmation: FC = () => {
 
         <div className="flex items-center gap-2 bg-blue-50 p-3 rounded-sm border border-blue-200 text-xs text-blue-800 font-semibold mt-2">
           <Truck size={16} />
-          <span>Estimated delivery by <span className="font-bold">{formattedDate}</span></span>
+          <span>Estimated delivery in <span className="font-bold">20 mins</span></span>
         </div>
       </div>
 
