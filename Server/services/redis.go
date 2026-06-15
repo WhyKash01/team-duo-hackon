@@ -32,7 +32,7 @@ func InitRedis() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := RedisClient.Ping(ctx).Result()
+	_, err = RedisClient.Ping(ctx).Result()
 	if err != nil {
 		log.Printf("Warning: Redis connection failed: %v", err)
 	} else {
