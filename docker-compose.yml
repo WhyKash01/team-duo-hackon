@@ -45,6 +45,7 @@ services:
       - PG_URI=postgres://postgres:postgres@postgres:5432/hackon
       - ML_ENGINE_URL=http://ml_engine:8000
       - JWT_SECRET=${JWT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - PORT=8080
       - GIN_MODE=release
     depends_on:
