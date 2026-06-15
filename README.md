@@ -1,132 +1,125 @@
-# Amazon Clone — Team Duo HackOn
+# ⚡ Amazon Zap — Intelligent Quick-Commerce System
 
-A full-stack e-commerce application inspired by Amazon, built with a React (Vite) frontend and a Go (Gin) backend, backed by MongoDB.
+> **Reimagining Urgent Shopping**: From intent to confirmed order in under 30 seconds.
 
-## Tech Stack
+Built for **Amazon HackOn 2025** — Theme: *Amazon Now – Reimagining Urgent Shopping*
 
-| Layer    | Technology                                      |
-| -------- | ----------------------------------------------- |
-| Frontend | React 19, Vite 8, Redux Toolkit, Tailwind CSS 4 |
-| Backend  | Go 1.25, Gin, MongoDB Driver v2                 |
-| Database | MongoDB                                         |
-| Auth     | JWT (access + refresh tokens)                   |
+---
 
-## Project Structure
+## 🧠 The Problem
+
+Quick-commerce delivers in 10 minutes. But the customer spends **15 minutes deciding what to order**. The bottleneck isn't the rider — it's the shopping itself.
+
+---
+
+## 🏗️ Architecture
+
+### System Design (Detailed)
+
+![Amazon Zap Architecture](assets/architecture_detailed.png)
+
+### AWS Deployment Architecture
+
+![Amazon Zap AWS](assets/architecture_aws.png)
+
+---
+
+## ✨ Five Core Features
+
+| # | Feature | What It Does |
+|---|---------|-------------|
+| 1 | **Intent-to-Cart Compiler** | 🎤 Speak "make paneer butter masala" → LLM decomposes → vector search → full purchasable cart in 5 seconds |
+| 2 | **Probabilistic Substitution Integrity Layer** | Out-of-stock item → auto-suggests closest alternative (60% semantic + 30% price + 10% brand scoring) |
+| 3 | **Autonomous Cart Stability System** | Cart self-corrects on price changes, stock fluctuations, and network drops. Event-driven + offline-first. |
+| 4 | **Consumption Forecasting & Replenishment Engine** | Learns purchase rhythm from 2nd order. Overdue items surface automatically. Zero setup. |
+| 5 | **Anti-Double Spend Inventory Enforcement Layer** | Redis atomic DECRBY ensures each unit reserved exactly once. No overselling under any concurrency. |
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, Vite 8, Redux Toolkit, Tailwind CSS 4, Web Speech API |
+| Backend | Go (Gin), JWT Auth, RabbitMQ consumers |
+| ML Engine | Python FastAPI, sentence-transformers (MiniLM-L12-v2) |
+| AI | Google Gemini (task decomposition) |
+| Vector DB | PostgreSQL + pgvector (384-dim embeddings, cosine similarity) |
+| Operational DB | MongoDB Atlas |
+| Cache | Redis (inventory counters, stale flags, replenishment stats) |
+| Event Bus | RabbitMQ (topic exchange: price.changed, stock.changed, user.purchase) |
+| Infra | AWS EC2, Docker Compose |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker Desktop
+- Go 1.25+
+- Node.js 22+
+- Python 3.10+
+
+### First Time Setup
+```bash
+make build
+```
+This installs all dependencies (Go, Node, Python/PyTorch), starts Docker infra, and seeds the ML engine with product embeddings.
+
+### Run (after build)
+```bash
+make run
+```
+
+### Services
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8080 |
+| ML Engine | http://localhost:8000 |
+| RabbitMQ UI | http://localhost:15672 |
+| Admin Panel | http://localhost:3001 |
+
+### Stop
+```bash
+make stop
+```
+
+---
+
+## 📁 Project Structure
 
 ```
-├── Client/          # React frontend (Vite)
-│   ├── src/
-│   │   ├── components/   # UI components (Header, Footer, Auth, Cart, Product)
-│   │   ├── features/     # Redux slices (auth, cart)
-│   │   └── app/          # Redux store
-│   └── package.json
+├── Client/              # React frontend (Vite + Redux + Tailwind)
+│   └── src/
+│       ├── components/  # UI (Header, Cart, Checkout, Search, TaskShopping)
+│       └── features/    # Redux slices (cart, auth, orders, recommendations, stability)
 │
-├── Server/          # Go backend (Gin)
-│   ├── controllers/      # Route handlers
-│   ├── models/           # MongoDB document models
-│   ├── middleware/       # Auth & CORS middleware
-│   ├── routes/           # API route definitions
-│   ├── database/         # MongoDB connection
-│   ├── config/           # Env config loader
-│   ├── utils/            # JWT token utilities
-│   └── main.go
+├── Server/              # Go backend (Gin)
+│   ├── controllers/     # Auth, Cart, Products, Orders, Recommendations, Admin
+│   ├── services/        # Redis, RabbitMQ, LLM, Inventory, Consumers
+│   ├── middleware/      # JWT Auth, CORS
+│   └── models/          # MongoDB document schemas
 │
-└── README.md
+├── ml_engine/           # Python FastAPI (sentence-transformers + pgvector)
+│   └── main.py          # /search, /find-substitute, /seed endpoints
+│
+├── admin/               # Standalone admin panel (port 3001)
+├── docker-compose.yml   # Redis + RabbitMQ + PostgreSQL+pgvector
+└── Makefile             # make build | make run | make stop
 ```
 
-## Prerequisites
+---
 
-- **Node.js** >= 22.12.0
-- **Go** >= 1.25
-- **MongoDB** running locally on port 27017 (or update `MONGODB_URI` in Server/.env)
+## 🔑 Key Algorithms
 
-## Setup & Run
+- **Hybrid Vector + Keyword Search** — Cosine similarity (pgvector) merged with ILIKE keyword boost. O(log n) with IVFFlat index.
+- **Probabilistic Substitution Scoring** — `0.6×semantic + 0.3×price_proximity + 0.1×brand_match`
+- **Replenishment Formula** — `weighted_score = 0.6 × (gap/avg_interval) + 0.4 × log(count+1)`. Works from 2nd purchase, no ML training.
+- **Atomic Inventory** — Redis DECRBY (O(1), sub-ms). Same pattern as ticketing systems handling 100k concurrent requests.
 
-### 1. Clone the repo
+---
 
-```bash
-git clone <repo-url>
-cd team-duo-hackon
-```
+## 👥 Team
 
-### 2. Start MongoDB
-
-Make sure MongoDB is running locally:
-
-```bash
-mongod
-```
-
-### 3. Run the Backend (Go server)
-
-```bash
-cd Server
-go mod download
-go run main.go
-```
-
-Server starts at **http://localhost:8080**
-
-### 4. Run the Frontend (React client)
-
-```bash
-cd Client
-npm install
-npm run dev
-```
-
-Client starts at **http://localhost:5173**
-
-## Environment Variables
-
-### Server (`Server/.env`)
-
-```env
-PORT=8080
-ENV=development
-MONGODB_URI=mongodb://localhost:27017/
-DATABASE_NAME=HackOn
-```
-
-### Client (`Client/.env`)
-
-```env
-VITE_API_URL=http://localhost:8080/api
-```
-
-## API Endpoints
-
-### Public
-
-| Method | Endpoint            | Description              |
-| ------ | ------------------- | ------------------------ |
-| GET    | /api/ping           | Health check             |
-| POST   | /api/register       | Register a new user      |
-| POST   | /api/login          | Login & get JWT tokens   |
-| POST   | /api/refresh        | Refresh access token     |
-| GET    | /api/products       | List products (paginated)|
-| GET    | /api/products/:id   | Get product by ID        |
-
-### Protected (requires JWT)
-
-| Method | Endpoint                    | Description            |
-| ------ | --------------------------- | ---------------------- |
-| POST   | /api/logout                 | Logout user            |
-| GET    | /api/cart                   | Get user's cart        |
-| POST   | /api/cart/add               | Add item to cart       |
-| POST   | /api/cart/update            | Update cart item qty   |
-| DELETE | /api/cart/remove/:product_id| Remove item from cart  |
-| DELETE | /api/cart/clear             | Clear entire cart      |
-
-## Features
-
-- User registration & login with JWT authentication
-- Product catalog with pagination
-- Product detail pages
-- Cart management (add, update, remove, clear)
-- Responsive Amazon-like UI with Tailwind CSS
-- Redux state management for auth and cart
-
-## Team
-
-**Team Duo** — Built for HackOn
+**Team Duo** — Built for Amazon HackOn 2025
