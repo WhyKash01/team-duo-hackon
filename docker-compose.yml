@@ -39,6 +39,7 @@ services:
       - "8080:8080"
     environment:
       - MONGODB_URI=${MONGODB_URI}
+      - DATABASE_NAME=HackOn
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - PG_URI=postgres://postgres:postgres@postgres:5432/hackon
