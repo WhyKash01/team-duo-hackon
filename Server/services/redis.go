@@ -15,17 +15,19 @@ var RedisClient *redis.Client
 func InitRedis() {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "localhost:6379"
+		addr = "redis://localhost:6379"
 	}
 
-	RedisClient = redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     "",
-		DB:           0,
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
+	opts, err := redis.ParseURL(addr)
+	if err != nil {
+		log.Printf("Warning: failed to parse REDIS_URL: %v", err)
+		opts = &redis.Options{Addr: "localhost:6379"}
+	}
+	opts.DialTimeout = 5 * time.Second
+	opts.ReadTimeout = 3 * time.Second
+	opts.WriteTimeout = 3 * time.Second
+
+	RedisClient = redis.NewClient(opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
