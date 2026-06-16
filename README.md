@@ -1,14 +1,14 @@
-# ⚡ Amazon Zap — Intelligent Quick-Commerce System
+# ⚡ Amazon Zap: Intelligent Quick-Commerce System
 
 > **Reimagining Urgent Shopping**: From intent to confirmed order in under 30 seconds.
 
-Built for **Amazon HackOn 2025** — Theme: *Amazon Now – Reimagining Urgent Shopping*
+Built for **Amazon HackOn 2026**  Theme: *Amazon Now Reimagining Urgent Shopping*
 
 ---
 
 ## 🧠 The Problem
 
-Quick-commerce delivers in 10 minutes. But the customer spends **15 minutes deciding what to order**. The bottleneck isn't the rider — it's the shopping itself.
+Quick-commerce delivers in 10 minutes. But the customer spends **15 minutes deciding what to order**. The bottleneck isn't the rider, it's the shopping itself.
 
 ---
 
@@ -113,13 +113,13 @@ make stop
 
 ## 🔑 Key Algorithms
 
-- **Hybrid Vector + Keyword Search** — Cosine similarity (pgvector) merged with ILIKE keyword boost. O(log n) with IVFFlat index.
-- **Probabilistic Substitution Scoring** — `0.6×semantic + 0.3×price_proximity + 0.1×brand_match`
-- **Replenishment Formula** — `weighted_score = 0.6 × (gap/avg_interval) + 0.4 × log(count+1)`. Works from 2nd purchase, no ML training.
-- **Atomic Inventory** — Redis DECRBY (O(1), sub-ms). Same pattern as ticketing systems handling 100k concurrent requests.
+- **Hybrid Vector + Keyword Search**: Cosine similarity (pgvector) merged with ILIKE keyword boost. O(log n) with IVFFlat index.
+- **Probabilistic Substitution Scoring**: `0.6×semantic + 0.3×price_proximity + 0.1×brand_match`
+- **Replenishment Formula**: `weighted_score = 0.6 × (gap/avg_interval) + 0.4 × log(count+1)`. Works from 2nd purchase, no ML training.
+- **Atomic Inventory**: Redis DECRBY (O(1), sub-ms). Same pattern as ticketing systems handling 100k concurrent requests.
 
 ---
 
 ## 👥 Team
 
-**Team Duo** — Built for Amazon HackOn 2025
+**Team Duo**: Built for Amazon HackOn 2026
